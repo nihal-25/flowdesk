@@ -1,0 +1,28 @@
+{
+  "name": "flowdesk",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Real-time multi-tenant SaaS customer support platform",
+  "workspaces": [
+    "packages/*",
+    "services/*",
+    "frontend"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "dev": "concurrently \"npm run dev -w services/gateway\" \"npm run dev -w services/auth\" \"npm run dev -w services/tickets\" \"npm run dev -w services/chat\" \"npm run dev -w services/notifications\" \"npm run dev -w services/analytics\"",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "db:migrate": "npm run migrate -w packages/database",
+    "infra:up": "docker-compose up -d",
+    "infra:down": "docker-compose down"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}
