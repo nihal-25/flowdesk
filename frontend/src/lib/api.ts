@@ -51,6 +51,9 @@ api.interceptors.response.use(
       }
       originalRequest._retry = true;
       isRefreshing = true;
+      // Only attempt refresh if we had a token (i.e. the user was authenticated).
+      // Without this guard, every unauthenticated page load triggers a logout redirect.
+      const hadToken = _accessToken !== null;
       try {
         const { data } = await axios.post<{
           success: boolean;
@@ -64,7 +67,9 @@ api.interceptors.response.use(
         throw new Error('Refresh failed');
       } catch (refreshError) {
         processQueue(refreshError);
-        _onLogout?.();
+        _accessToken = null;
+        // Only fire logout (redirect to /login) when the user was actively logged in
+        if (hadToken) _onLogout?.();
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;

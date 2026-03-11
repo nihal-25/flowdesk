@@ -77,7 +77,10 @@ function setRefreshCookie(res: Response, token: string): void {
   res.cookie(REFRESH_COOKIE_NAME, token, {
     httpOnly: true,
     secure: config.NODE_ENV === 'production',
-    sameSite: 'strict',
+    // 'none' allows the cookie to be sent on cross-origin requests
+    // (required when frontend and API are on different domains, e.g. vercel.app → railway.app)
+    // 'none' requires secure:true in production
+    sameSite: config.NODE_ENV === 'production' ? 'none' : 'lax',
     maxAge: JWT_REFRESH_TOKEN_TTL_SECONDS * 1000,
     path: '/auth',
   });
