@@ -42,7 +42,7 @@ COPY --from=builder --chown=flowdesk:nodejs /app/packages/kafka/dist ./packages/
 COPY --from=builder --chown=flowdesk:nodejs /app/packages/kafka/package.json ./packages/kafka/
 COPY --from=builder --chown=flowdesk:nodejs /app/services/auth/dist ./services/auth/dist
 COPY --from=builder --chown=flowdesk:nodejs /app/services/auth/package.json ./services/auth/
-COPY --from=builder --chown=flowdesk:nodejs /app/packages/database/src/migrations ./packages/database/src/migrations
+COPY --from=builder --chown=flowdesk:nodejs /app/packages/database/src/migrations ./packages/database/dist/migrations
 COPY --from=builder --chown=flowdesk:nodejs /app/package.json ./
 COPY --from=builder --chown=flowdesk:nodejs /app/package-lock.json ./
 
