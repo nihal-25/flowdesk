@@ -38,6 +38,20 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'gateway', timestamp: new Date().toISOString() });
 });
 
+// ─── Body rewrite helper ──────────────────────────────────────────────────────
+// express.json() consumes the request body stream. When http-proxy-middleware
+// tries to forward the request, the stream is already drained (0 bytes received
+// by the upstream). We re-serialize req.body back into the proxy request.
+function rewriteBody(proxyReq: import('http').ClientRequest, req: express.Request): void {
+  if (req.body && Object.keys(req.body).length > 0) {
+    const bodyData = JSON.stringify(req.body);
+    proxyReq.setHeader('Content-Type', 'application/json');
+    proxyReq.setHeader('Content-Length', Buffer.byteLength(bodyData));
+    proxyReq.write(bodyData);
+    proxyReq.end();
+  }
+}
+
 // ─── Auth routes (no JWT required — pass-through) ────────────────────────────
 // pathRewrite restores the /auth prefix that Express strips when matching app.use('/auth', ...)
 app.use('/auth', createProxyMiddleware({
@@ -47,6 +61,7 @@ app.use('/auth', createProxyMiddleware({
   on: {
     proxyReq: (proxyReq, req: express.Request) => {
       proxyReq.setHeader('x-request-id', req.id);
+      rewriteBody(proxyReq, req);
     },
   },
 }));
@@ -73,6 +88,9 @@ const proxyOptions = (target: string, prefix: string) => ({
   changeOrigin: true,
   pathRewrite: { '^/': `/${prefix}/` },
   on: {
+    proxyReq: (proxyReq: import('http').ClientRequest, req: express.Request) => {
+      rewriteBody(proxyReq, req);
+    },
     error: (err: Error, _req: express.Request, res: express.Response | Socket) => {
       console.error('[gateway:proxy] Upstream error:', err.message);
       if ('status' in res && typeof res.status === 'function') {
