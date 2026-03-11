@@ -43,6 +43,7 @@ COPY --from=builder --chown=flowdesk:nodejs /app/packages/kafka/package.json ./p
 COPY --from=builder --chown=flowdesk:nodejs /app/services/chat/dist ./services/chat/dist
 COPY --from=builder --chown=flowdesk:nodejs /app/services/chat/package.json ./services/chat/
 COPY --from=builder --chown=flowdesk:nodejs /app/package.json ./
+COPY --from=builder --chown=flowdesk:nodejs /app/package-lock.json ./
 
 RUN npm ci --workspace=services/chat --include-workspace-root --omit=dev
 

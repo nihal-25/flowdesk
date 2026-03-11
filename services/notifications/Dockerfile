@@ -44,6 +44,7 @@ COPY --from=builder --chown=flowdesk:nodejs /app/services/notifications/dist ./s
 COPY --from=builder --chown=flowdesk:nodejs /app/services/notifications/package.json ./services/notifications/
 COPY --from=builder --chown=flowdesk:nodejs /app/packages/database/src/migrations ./packages/database/src/migrations
 COPY --from=builder --chown=flowdesk:nodejs /app/package.json ./
+COPY --from=builder --chown=flowdesk:nodejs /app/package-lock.json ./
 
 RUN npm ci --workspace=services/notifications --include-workspace-root --omit=dev
 

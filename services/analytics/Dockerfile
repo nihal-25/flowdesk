@@ -44,6 +44,7 @@ COPY --from=builder --chown=flowdesk:nodejs /app/services/analytics/dist ./servi
 COPY --from=builder --chown=flowdesk:nodejs /app/services/analytics/package.json ./services/analytics/
 COPY --from=builder --chown=flowdesk:nodejs /app/packages/database/src/migrations ./packages/database/src/migrations
 COPY --from=builder --chown=flowdesk:nodejs /app/package.json ./
+COPY --from=builder --chown=flowdesk:nodejs /app/package-lock.json ./
 
 RUN npm ci --workspace=services/analytics --include-workspace-root --omit=dev
 
