@@ -46,7 +46,7 @@ COPY --from=builder --chown=flowdesk:nodejs /app/packages/database/src/migration
 COPY --from=builder --chown=flowdesk:nodejs /app/package.json ./
 COPY --from=builder --chown=flowdesk:nodejs /app/package-lock.json ./
 
-RUN npm ci --workspace=services/tickets --include-workspace-root --omit=dev
+RUN npm install --workspace=services/tickets --include-workspace-root --omit=dev
 
 USER flowdesk
 EXPOSE 3002

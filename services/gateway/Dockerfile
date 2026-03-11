@@ -45,7 +45,7 @@ COPY --from=builder --chown=flowdesk:nodejs /app/services/gateway/package.json .
 COPY --from=builder --chown=flowdesk:nodejs /app/package.json ./
 COPY --from=builder --chown=flowdesk:nodejs /app/package-lock.json ./
 
-RUN npm ci --workspace=services/gateway --include-workspace-root --omit=dev
+RUN npm install --workspace=services/gateway --include-workspace-root --omit=dev
 
 USER flowdesk
 EXPOSE 3000
