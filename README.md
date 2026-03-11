@@ -10,7 +10,7 @@
 [![Apache Kafka](https://img.shields.io/badge/Kafka-Redpanda_Cloud-231F20?logo=apachekafka)](https://www.redpanda.com/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-**[Live Demo](https://flowdesk.vercel.app)** · **[API Docs](#api-reference)** · **[Architecture](#architecture)**
+**[Live Demo](https://flowdesk-orpin.vercel.app)** · **[API](https://gateway-production-25dc.up.railway.app)** · **[Architecture](#architecture)**
 
 ---
 
