@@ -13,6 +13,7 @@ export interface RedisConfig {
 
 let redisClient: Redis | null = null;
 let subscriberClient: Redis | null = null;
+let redisConfig: RedisConfig | null = null;
 
 function buildRedisOptions(config: RedisConfig): RedisOptions {
   return {
@@ -57,6 +58,7 @@ export function initRedis(config: RedisConfig): void {
   if (redisClient) {
     throw new Error('Redis client already initialized. Call getRedis() to reuse it.');
   }
+  redisConfig = config;
   redisClient = createRedisClient(config);
 }
 
@@ -73,10 +75,11 @@ export function getRedis(): Redis {
  */
 export function getSubscriberClient(config?: RedisConfig): Redis {
   if (!subscriberClient) {
-    if (!config) {
-      throw new Error('Subscriber client not initialized. Pass config on first call.');
+    const cfg = config ?? redisConfig;
+    if (!cfg) {
+      throw new Error('Subscriber client not initialized. Pass config on first call or call initRedis() first.');
     }
-    subscriberClient = createRedisClient(config);
+    subscriberClient = createRedisClient(cfg);
     subscriberClient.on('ready', () =>
       console.info('[redis] Subscriber client ready'),
     );
