@@ -39,9 +39,11 @@ app.get('/health', (_req, res) => {
 });
 
 // ─── Auth routes (no JWT required — pass-through) ────────────────────────────
+// pathRewrite restores the /auth prefix that Express strips when matching app.use('/auth', ...)
 app.use('/auth', createProxyMiddleware({
   target: config.AUTH_SERVICE_URL,
   changeOrigin: true,
+  pathRewrite: { '^/': '/auth/' },
   on: {
     proxyReq: (proxyReq, req: express.Request) => {
       proxyReq.setHeader('x-request-id', req.id);
@@ -65,9 +67,11 @@ app.use((req: express.Request, _res: express.Response, next: express.NextFunctio
   next();
 });
 
-const proxyOptions = (target: string) => ({
+// pathRewrite restores the path prefix that Express strips when matching app.use('/prefix', ...)
+const proxyOptions = (target: string, prefix: string) => ({
   target,
   changeOrigin: true,
+  pathRewrite: { '^/': `/${prefix}/` },
   on: {
     error: (err: Error, _req: express.Request, res: express.Response | Socket) => {
       console.error('[gateway:proxy] Upstream error:', err.message);
@@ -82,13 +86,13 @@ const proxyOptions = (target: string) => ({
   },
 });
 
-app.use('/tickets', createProxyMiddleware(proxyOptions(config.TICKETS_SERVICE_URL)));
-app.use('/agents', createProxyMiddleware(proxyOptions(config.TICKETS_SERVICE_URL)));
-app.use('/customers', createProxyMiddleware(proxyOptions(config.TICKETS_SERVICE_URL)));
-app.use('/chat', createProxyMiddleware({ ...proxyOptions(config.CHAT_SERVICE_URL), ws: true }));
-app.use('/presence', createProxyMiddleware(proxyOptions(config.CHAT_SERVICE_URL)));
-app.use('/notifications', createProxyMiddleware(proxyOptions(config.NOTIFICATIONS_SERVICE_URL)));
-app.use('/analytics', createProxyMiddleware(proxyOptions(config.ANALYTICS_SERVICE_URL)));
+app.use('/tickets', createProxyMiddleware(proxyOptions(config.TICKETS_SERVICE_URL, 'tickets')));
+app.use('/agents', createProxyMiddleware(proxyOptions(config.TICKETS_SERVICE_URL, 'agents')));
+app.use('/customers', createProxyMiddleware(proxyOptions(config.TICKETS_SERVICE_URL, 'customers')));
+app.use('/chat', createProxyMiddleware({ ...proxyOptions(config.CHAT_SERVICE_URL, 'chat'), ws: true }));
+app.use('/presence', createProxyMiddleware(proxyOptions(config.CHAT_SERVICE_URL, 'presence')));
+app.use('/notifications', createProxyMiddleware(proxyOptions(config.NOTIFICATIONS_SERVICE_URL, 'notifications')));
+app.use('/analytics', createProxyMiddleware(proxyOptions(config.ANALYTICS_SERVICE_URL, 'analytics')));
 
 // ─── Error handling ───────────────────────────────────────────────────────────
 app.use(notFoundHandler);
