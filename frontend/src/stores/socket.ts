@@ -16,7 +16,7 @@ interface SocketState {
   onStoppedTyping: (handler: (data: { userId: string; ticketId: string }) => void) => () => void;
 }
 
-const SOCKET_URL = import.meta.env['VITE_API_URL'] ?? '';
+const SOCKET_URL = (import.meta.env['VITE_API_URL'] ?? '').trim();
 
 export const useSocketStore = create<SocketState>((set, get) => ({
   socket: null,

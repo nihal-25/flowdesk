@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const BASE_URL = import.meta.env['VITE_API_URL'] ?? '';
+// .trim() guards against a stray newline/whitespace in the VITE_API_URL env var,
+// which would otherwise corrupt every request URL and hang the app on load.
+const BASE_URL = (import.meta.env['VITE_API_URL'] ?? '').trim();
 
 export const api = axios.create({
   baseURL: BASE_URL,
