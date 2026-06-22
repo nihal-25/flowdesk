@@ -74,7 +74,7 @@ async function bootstrap(): Promise<void> {
     clientId: 'flowdesk-tickets',
     brokers: config.KAFKA_BROKERS.split(',').map((b) => b.trim()),
     sasl: {
-      mechanism: 'scram-sha-256',
+      mechanism: 'plain',
       username: config.KAFKA_SASL_USERNAME,
       password: config.KAFKA_SASL_PASSWORD,
     },

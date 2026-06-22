@@ -5,7 +5,7 @@ export interface KafkaClientConfig {
   brokers: string[];
   clientId: string;
   sasl?: {
-    mechanism: 'scram-sha-256' | 'scram-sha-512';
+    mechanism: 'plain' | 'scram-sha-256' | 'scram-sha-512';
     username: string;
     password: string;
   };
@@ -21,7 +21,10 @@ function buildSaslOptions(
   if (sasl.mechanism === 'scram-sha-256') {
     return { mechanism: 'scram-sha-256', username: sasl.username, password: sasl.password };
   }
-  return { mechanism: 'scram-sha-512', username: sasl.username, password: sasl.password };
+  if (sasl.mechanism === 'scram-sha-512') {
+    return { mechanism: 'scram-sha-512', username: sasl.username, password: sasl.password };
+  }
+  return { mechanism: 'plain', username: sasl.username, password: sasl.password };
 }
 
 export function createKafkaClient(config: KafkaClientConfig): Kafka {
