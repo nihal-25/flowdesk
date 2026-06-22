@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 import { query, queryOne, withTransaction } from '@flowdesk/database';
 import { publishEvent } from '@flowdesk/kafka';
-import { KAFKA_TOPICS, TICKET_STATUS_TRANSITIONS } from '@flowdesk/shared';
+import { publish } from '@flowdesk/redis';
+import { KAFKA_TOPICS, TICKET_STATUS_TRANSITIONS, REDIS_KEYS } from '@flowdesk/shared';
 import type {
   TicketCreatedEvent,
   TicketUpdatedEvent,
@@ -433,9 +434,24 @@ ticketsRouter.patch('/:id', authenticate, async (req, res, next) => {
       [id],
     );
 
+    const mappedTicket = mapTicketWithDetails(updated ?? {});
+
+    // Real-time fanout: notify WebSocket clients in the ticket room of the update.
+    // Fire-and-forget — Redis issues must not fail the update write.
+    if (changes.length > 0) {
+      publish(
+        REDIS_KEYS.PUBSUB_TICKETS(tenantId),
+        'ticket:updated',
+        { ...mappedTicket, ticketId: id },
+        tenantId,
+      ).catch((err: unknown) =>
+        console.error('[tickets] Failed to publish ticket update to Redis pub/sub:', err),
+      );
+    }
+
     res.json({
       success: true,
-      data: mapTicketWithDetails(updated ?? {}),
+      data: mappedTicket,
       requestId: req.id,
       timestamp: new Date().toISOString(),
     });
@@ -550,9 +566,18 @@ ticketsRouter.post('/:id/messages', authenticate, async (req, res, next) => {
       [messageId],
     );
 
+    const mappedMessage = mapMessage(message ?? {});
+
+    // Real-time fanout: publish to Redis pub/sub so the chat service broadcasts
+    // this message over WebSocket to everyone in the ticket/tenant room.
+    // Fire-and-forget — a Redis hiccup must not fail the message write.
+    publish(REDIS_KEYS.PUBSUB_MESSAGES(tenantId), 'message:new', mappedMessage, tenantId).catch(
+      (err: unknown) => console.error('[tickets] Failed to publish message to Redis pub/sub:', err),
+    );
+
     res.status(201).json({
       success: true,
-      data: mapMessage(message ?? {}),
+      data: mappedMessage,
       requestId: req.id,
       timestamp: new Date().toISOString(),
     });
