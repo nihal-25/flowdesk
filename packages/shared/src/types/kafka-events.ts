@@ -102,7 +102,9 @@ export interface WebhookDeliverEvent {
   topic: typeof KAFKA_TOPICS.WEBHOOK_DELIVER;
   tenantId: string;
   webhookEndpointId: string;
-  eventType: WebhookEvent;
+  // 'webhook.test' is used by the manual test-send endpoint; all other values
+  // correspond to real business events a tenant can subscribe to.
+  eventType: WebhookEvent | 'webhook.test';
   payload: Record<string, unknown>;
   attemptNumber: number;
   requestId: string;

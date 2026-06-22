@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { format } from 'date-fns';
 import {
   User, Key, Webhook, Users, Eye, EyeOff,
-  Copy, Check, Trash2, Plus, UserPlus,
+  Copy, Check, Trash2, Plus, UserPlus, Send, Power,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuthStore } from '../stores/auth';
@@ -22,14 +22,14 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'team', label: 'Team', icon: <Users size={16} /> },
 ];
 
+// The events the platform actually emits (kept in sync with the tickets
+// service dispatchWebhooks call sites).
 const WEBHOOK_EVENTS = [
   'ticket.created',
   'ticket.updated',
-  'ticket.resolved',
-  'ticket.closed',
   'ticket.assigned',
-  'message.created',
-  'agent.invited',
+  'ticket.resolved',
+  'message.sent',
 ];
 
 const ROLE_OPTIONS = [
@@ -185,7 +185,7 @@ function ApiKeysTab() {
   const fetchKeys = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await api.get<{ success: boolean; data?: ApiKey[] }>('/settings/api-keys');
+      const { data } = await api.get<{ success: boolean; data?: ApiKey[] }>('/auth/api-keys');
       if (data.success && data.data) setApiKeys(data.data);
     } catch { /* ignore */ } finally {
       setLoading(false);
@@ -200,12 +200,12 @@ function ApiKeysTab() {
     if (!newKeyName.trim()) { setCreateError('Name is required'); return; }
     setCreateLoading(true);
     try {
-      const { data } = await api.post<{ success: boolean; data?: { key: string; apiKey: ApiKey } }>(
-        '/settings/api-keys',
+      const { data } = await api.post<{ success: boolean; data?: { rawKey: string } }>(
+        '/auth/api-keys',
         { name: newKeyName.trim() }
       );
       if (data.success && data.data) {
-        setRawKey(data.data.key);
+        setRawKey(data.data.rawKey);
         setCreateModalOpen(false);
         setNewKeyName('');
         setRawKeyModalOpen(true);
@@ -221,7 +221,7 @@ function ApiKeysTab() {
 
   const handleRevoke = async (id: string) => {
     try {
-      await api.delete(`/settings/api-keys/${id}`);
+      await api.delete(`/auth/api-keys/${id}`);
       setApiKeys((prev) => prev.filter((k) => k.id !== id));
     } catch { /* ignore */ }
   };
@@ -338,11 +338,15 @@ function WebhooksTab() {
   const [selectedEvents, setSelectedEvents] = useState<string[]>([]);
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState('');
+  const [secret, setSecret] = useState('');
+  const [secretModalOpen, setSecretModalOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [testMsg, setTestMsg] = useState('');
 
   const fetchWebhooks = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await api.get<{ success: boolean; data?: WebhookEndpoint[] }>('/settings/webhooks');
+      const { data } = await api.get<{ success: boolean; data?: WebhookEndpoint[] }>('/webhooks');
       if (data.success && data.data) setWebhooks(data.data);
     } catch { /* ignore */ } finally {
       setLoading(false);
@@ -358,14 +362,16 @@ function WebhooksTab() {
     if (selectedEvents.length === 0) { setCreateError('Select at least one event'); return; }
     setCreateLoading(true);
     try {
-      const { data } = await api.post<{ success: boolean; data?: WebhookEndpoint }>(
-        '/settings/webhooks',
+      const { data } = await api.post<{ success: boolean; data?: WebhookEndpoint & { secret: string } }>(
+        '/webhooks',
         { url: webhookUrl.trim(), events: selectedEvents }
       );
-      if (data.success) {
+      if (data.success && data.data) {
         setModalOpen(false);
         setWebhookUrl('');
         setSelectedEvents([]);
+        setSecret(data.data.secret);
+        setSecretModalOpen(true);
         await fetchWebhooks();
       }
     } catch (err: unknown) {
@@ -378,9 +384,36 @@ function WebhooksTab() {
 
   const handleDelete = async (id: string) => {
     try {
-      await api.delete(`/settings/webhooks/${id}`);
+      await api.delete(`/webhooks/${id}`);
       setWebhooks((prev) => prev.filter((w) => w.id !== id));
     } catch { /* ignore */ }
+  };
+
+  const handleToggleActive = async (wh: WebhookEndpoint) => {
+    try {
+      const { data } = await api.patch<{ success: boolean; data?: WebhookEndpoint }>(
+        `/webhooks/${wh.id}`,
+        { isActive: !wh.isActive }
+      );
+      if (data.success && data.data) {
+        setWebhooks((prev) => prev.map((w) => (w.id === wh.id ? data.data! : w)));
+      }
+    } catch { /* ignore */ }
+  };
+
+  const handleTest = async (id: string) => {
+    setTestMsg('');
+    try {
+      await api.post(`/webhooks/${id}/test`, {});
+      setTestMsg('Test delivery enqueued — check your endpoint.');
+      setTimeout(() => setTestMsg(''), 4000);
+    } catch { setTestMsg('Failed to enqueue test delivery.'); }
+  };
+
+  const handleCopySecret = async () => {
+    await navigator.clipboard.writeText(secret);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   const toggleEvent = (event: string) => {
@@ -391,7 +424,8 @@ function WebhooksTab() {
 
   return (
     <div className="space-y-4 max-w-2xl">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between">
+        {testMsg ? <p className="text-sm text-primary-600">{testMsg}</p> : <span />}
         <Button onClick={() => setModalOpen(true)}>
           <Plus size={14} />
           Add Webhook
@@ -412,6 +446,9 @@ function WebhooksTab() {
               <div key={webhook.id} className="px-6 py-4 flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-mono text-gray-900 truncate">{webhook.url}</p>
+                  {webhook.secretPrefix && (
+                    <p className="text-xs font-mono text-gray-400 mt-0.5">{webhook.secretPrefix}</p>
+                  )}
                   <div className="flex flex-wrap gap-1 mt-1.5">
                     {webhook.events.map((evt) => (
                       <span key={evt} className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">{evt}</span>
@@ -426,9 +463,17 @@ function WebhooksTab() {
                     )}
                   </div>
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => void handleDelete(webhook.id)}>
-                  <Trash2 size={14} className="text-red-500" />
-                </Button>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <Button variant="ghost" size="sm" onClick={() => void handleTest(webhook.id)} title="Send test delivery">
+                    <Send size={14} className="text-gray-500" />
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => void handleToggleActive(webhook)} title={webhook.isActive ? 'Disable' : 'Enable'}>
+                    <Power size={14} className={webhook.isActive ? 'text-green-600' : 'text-gray-400'} />
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => void handleDelete(webhook.id)} title="Delete">
+                    <Trash2 size={14} className="text-red-500" />
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
@@ -468,6 +513,25 @@ function WebhooksTab() {
             <Button type="submit" isLoading={createLoading}>Add Webhook</Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Show Signing Secret Once Modal */}
+      <Modal isOpen={secretModalOpen} onClose={() => setSecretModalOpen(false)} title="Webhook Signing Secret">
+        <div className="space-y-4">
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
+            Copy this signing secret now — you won't be able to see it again. Use it to verify the
+            <code className="mx-1 px-1 bg-amber-100 rounded">X-FlowDesk-Signature</code> (HMAC-SHA256) header on each delivery.
+          </div>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 text-xs bg-gray-100 px-3 py-2 rounded-lg break-all font-mono">{secret}</code>
+            <Button variant="secondary" size="sm" onClick={() => void handleCopySecret()}>
+              {copied ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
+            </Button>
+          </div>
+          <div className="flex justify-end">
+            <Button onClick={() => setSecretModalOpen(false)}>Done</Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

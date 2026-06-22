@@ -107,6 +107,7 @@ const proxyOptions = (target: string, prefix: string) => ({
 app.use('/tickets', createProxyMiddleware(proxyOptions(config.TICKETS_SERVICE_URL, 'tickets')));
 app.use('/agents', createProxyMiddleware(proxyOptions(config.TICKETS_SERVICE_URL, 'agents')));
 app.use('/customers', createProxyMiddleware(proxyOptions(config.TICKETS_SERVICE_URL, 'customers')));
+app.use('/webhooks', createProxyMiddleware(proxyOptions(config.TICKETS_SERVICE_URL, 'webhooks')));
 app.use('/chat', createProxyMiddleware({ ...proxyOptions(config.CHAT_SERVICE_URL, 'chat'), ws: true }));
 app.use('/presence', createProxyMiddleware(proxyOptions(config.CHAT_SERVICE_URL, 'presence')));
 app.use('/notifications', createProxyMiddleware(proxyOptions(config.NOTIFICATIONS_SERVICE_URL, 'notifications')));

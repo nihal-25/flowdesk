@@ -15,6 +15,7 @@ import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { ticketsRouter } from './routes/tickets.js';
 import { agentsRouter } from './routes/agents.js';
 import { customersRouter } from './routes/customers.js';
+import { webhooksRouter } from './routes/webhooks.js';
 
 const app = express();
 
@@ -43,6 +44,7 @@ app.get('/health', (_req, res) => {
 app.use('/tickets', ticketsRouter);
 app.use('/agents', agentsRouter);
 app.use('/customers', customersRouter);
+app.use('/webhooks', webhooksRouter);
 
 // ─── Error handling ───────────────────────────────────────────────────────────
 app.use(notFoundHandler);

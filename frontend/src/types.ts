@@ -122,10 +122,12 @@ export interface WebhookEndpoint {
   tenantId: string;
   url: string;
   events: string[];
+  secretPrefix: string;
   isActive: boolean;
   consecutiveFailures: number;
   lastTriggeredAt: string | null;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface AnalyticsOverview {

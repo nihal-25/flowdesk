@@ -149,14 +149,18 @@ Click the bell to see the notification dropdown. Click a notification to jump to
 
 Go to **`/settings`** → **API Keys** tab:
 - Click **"Create API Key"** — the raw key is shown exactly once (copy it)
-- The key is stored as a bcrypt hash — even the server can't see the original
+- The key is stored as a SHA-256 hash — the server only ever keeps the digest
 - Use the key as a `Bearer` token to make API calls from external systems
 
 Go to **Settings → Webhooks**:
-- Add a webhook URL (use https://webhook.site to get a test endpoint)
-- Select which events to receive (`ticket.created`, `ticket.updated`, etc.)
-- When a ticket is created, FlowDesk signs the payload with HMAC-SHA256 and delivers it to your URL
-- Failed deliveries retry with exponential backoff: 1s → 2s → 4s → 8s → 16s
+- Add a webhook URL (use https://webhook.site to get a test endpoint) and pick the events to
+  subscribe to (`ticket.created`, `ticket.updated`, `ticket.assigned`, `ticket.resolved`, `message.sent`)
+- On creation the **signing secret** (`whsec_…`) is shown exactly once — copy it; it's used to verify deliveries
+- **Test** any endpoint with the send button to enqueue a signed `webhook.test` delivery immediately
+- When a subscribed event fires, the tickets service enqueues a `webhook.deliver` Kafka event for each
+  matching endpoint; the notifications worker signs the payload (`X-FlowDesk-Signature: sha256=…`) and POSTs it
+- Failed deliveries retry with exponential backoff (1s → 2s → 4s → 8s → 16s); an endpoint is auto-disabled
+  after 5 consecutive failures and re-enabling it resets the counter
 
 ---
 

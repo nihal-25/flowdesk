@@ -5,6 +5,7 @@ import { query, queryOne, withTransaction } from '@flowdesk/database';
 import { publishEvent } from '@flowdesk/kafka';
 import { publish } from '@flowdesk/redis';
 import { KAFKA_TOPICS, TICKET_STATUS_TRANSITIONS, REDIS_KEYS } from '@flowdesk/shared';
+import { dispatchWebhooks } from '../lib/webhook-dispatch.js';
 import type {
   TicketCreatedEvent,
   TicketUpdatedEvent,
@@ -120,6 +121,16 @@ ticketsRouter.post('/', authenticate, async (req, res, next) => {
       timestamp: now.toISOString(),
     };
     await publishEvent(KAFKA_TOPICS.TICKET_CREATED, event);
+
+    void dispatchWebhooks(tenantId, 'ticket.created', {
+      ticketId,
+      title,
+      priority,
+      status: 'open',
+      customerId: customerId ?? null,
+      assignedTo: assignedTo ?? null,
+      createdByUserId: userId,
+    }, req.auth.requestId);
 
     res.status(201).json({
       success: true,
@@ -393,6 +404,12 @@ ticketsRouter.patch('/:id', authenticate, async (req, res, next) => {
         timestamp: now,
       };
       await publishEvent(KAFKA_TOPICS.TICKET_UPDATED, updatedEvent);
+
+      void dispatchWebhooks(tenantId, 'ticket.updated', {
+        ticketId: id,
+        updatedByUserId: userId,
+        changes,
+      }, req.auth.requestId);
     }
 
     if (updates.assignedTo !== undefined && updates.assignedTo !== existing.assigned_to) {
@@ -408,6 +425,14 @@ ticketsRouter.patch('/:id', authenticate, async (req, res, next) => {
         timestamp: now,
       };
       await publishEvent(KAFKA_TOPICS.TICKET_ASSIGNED, assignedEvent);
+
+      void dispatchWebhooks(tenantId, 'ticket.assigned', {
+        ticketId: id,
+        title: updates.title ?? existing.title,
+        assignedToUserId: updates.assignedTo ?? userId,
+        assignedByUserId: userId,
+        previousAssigneeId: existing.assigned_to,
+      }, req.auth.requestId);
     }
 
     if (updates.status === 'resolved') {
@@ -423,6 +448,14 @@ ticketsRouter.patch('/:id', authenticate, async (req, res, next) => {
         timestamp: now,
       };
       await publishEvent(KAFKA_TOPICS.TICKET_RESOLVED, resolvedEvent);
+
+      void dispatchWebhooks(tenantId, 'ticket.resolved', {
+        ticketId: id,
+        title: updates.title ?? existing.title,
+        resolvedByUserId: userId,
+        customerId: existing.customer_id,
+        resolutionTimeMs: Date.now() - new Date(existing.created_at).getTime(),
+      }, req.auth.requestId);
     }
 
     const updated = await queryOne<Record<string, unknown>>(
@@ -574,6 +607,14 @@ ticketsRouter.post('/:id/messages', authenticate, async (req, res, next) => {
     publish(REDIS_KEYS.PUBSUB_MESSAGES(tenantId), 'message:new', mappedMessage, tenantId).catch(
       (err: unknown) => console.error('[tickets] Failed to publish message to Redis pub/sub:', err),
     );
+
+    void dispatchWebhooks(tenantId, 'message.sent', {
+      ticketId,
+      messageId,
+      senderId: userId,
+      messageType,
+      body,
+    }, req.auth.requestId);
 
     res.status(201).json({
       success: true,
