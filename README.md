@@ -6,7 +6,7 @@
 [![Node.js](https://img.shields.io/badge/Node.js-20_LTS-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)](https://redis.io/)
-[![Kafka](https://img.shields.io/badge/Kafka-Redpanda_Cloud-231F20?logo=apachekafka&logoColor=white)](https://www.redpanda.com/)
+[![Kafka](https://img.shields.io/badge/Kafka-Confluent_Cloud-231F20?logo=apachekafka&logoColor=white)](https://www.confluent.io/)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev/)
 [![License](https://img.shields.io/badge/license-MIT-22c55e)](LICENSE)
 
@@ -295,11 +295,11 @@ curl -s https://gateway-production-25dc.up.railway.app/analytics/overview \
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         DATA LAYER                                   │
 │                                                                      │
-│  PostgreSQL 15 (Railway)      Redis 7 (Railway)    Redpanda Cloud   │
+│  PostgreSQL 15 (Railway)      Redis 7 (Railway)    Confluent Cloud  │
 │  ─────────────────────        ────────────────     ───────────────  │
 │  12 tables, UUID PKs          Rate limiting        8 Kafka topics   │
 │  Row-level tenant isolation   Token blacklist      5 consumer groups│
-│  Raw SQL migrations           Pub/Sub broadcast    SASL/SCRAM-256   │
+│  Raw SQL migrations           Pub/Sub broadcast    SASL/PLAIN (TLS) │
 │  withTransaction() helper     Presence sets        Durable replay   │
 │  Parameterized queries only   Session cache        Auto-retry       │
 └─────────────────────────────────────────────────────────────────────┘
@@ -462,7 +462,7 @@ This mirrors GitHub's webhook security scheme. Customers can verify the payload 
 | **Node.js 20 + Express** | HTTP runtime | Non-blocking I/O ideal for chat; well-understood for microservices; stable LTS |
 | **PostgreSQL 15** | Primary database | ACID for ticket data; row-level tenant isolation visible in plain SQL; no ORM magic hiding queries |
 | **Redis 7** | Cache, pub/sub, rate limiting | Sub-ms latency; atomic Lua scripts; sorted sets for presence and rate limiting; pub/sub for WS scaling |
-| **Apache Kafka (Redpanda Cloud)** | Message bus | Durable replay; multiple consumers per topic; decouples services; no data loss if consumer is down |
+| **Apache Kafka (Confluent Cloud)** | Message bus | Durable replay; multiple consumers per topic; decouples services; no data loss if consumer is down |
 | **Socket.IO 4** | WebSocket server | Fallback transport; rooms map to ticket isolation; solid reconnection logic |
 | **Zod 3** | Schema validation | Parse-don't-validate at every boundary; errors surface as structured `ValidationError` objects |
 | **React 18 + Vite** | Frontend | Fast HMR; tree-shaking; no CRA overhead |
@@ -729,7 +729,7 @@ flowdesk/
 │       ├── hooks/                    # useWebSocket, useTickets, useAnalytics...
 │       └── lib/                      # API client (axios), WebSocket client
 │
-├── docker-compose.yml                # Local PostgreSQL + Redis (no Kafka — uses Redpanda Cloud)
+├── docker-compose.yml                # Local PostgreSQL + Redis (no Kafka — uses Confluent Cloud)
 └── README.md
 ```
 
@@ -741,7 +741,7 @@ flowdesk/
 
 - Node.js 20+
 - Docker + Docker Compose
-- A free Redpanda Cloud account at [console.redpanda.com](https://console.redpanda.com)
+- A free Confluent Cloud account at [confluent.cloud](https://confluent.cloud) (any Kafka cluster with SASL/PLAIN over TLS works)
 
 ### Setup
 
@@ -769,10 +769,11 @@ cp frontend/.env.example               frontend/.env
 openssl rand -hex 32   # JWT_ACCESS_SECRET
 openssl rand -hex 32   # JWT_REFRESH_SECRET
 
-# 6. Add Redpanda Cloud credentials to all service .env files:
-#    KAFKA_BROKERS=your-cluster.redpanda.cloud:9092
-#    KAFKA_SASL_USERNAME=your-user
-#    KAFKA_SASL_PASSWORD=your-password
+# 6. Add Confluent Cloud credentials to all service .env files:
+#    KAFKA_BROKERS=your-cluster.region.aws.confluent.cloud:9092
+#    KAFKA_SASL_USERNAME=your-api-key
+#    KAFKA_SASL_PASSWORD=your-api-secret
+#    (services authenticate with SASL/PLAIN over TLS)
 
 # 7. Build shared packages (once)
 npm run build -w packages/shared
@@ -861,8 +862,8 @@ The `packages/shared` types (`Ticket`, `User`, `Tenant`, `KafkaEvent`) are used 
   scaling across multiple service instances; typing indicators, presence tracking via
   Redis sorted sets, and per-ticket room isolation per tenant
 
-• Built an event-driven async pipeline over 8 Kafka topics (Redpanda Cloud,
-  SASL/SCRAM-SHA-256); services communicate exclusively through events — no
+• Built an event-driven async pipeline over 8 Kafka topics (Confluent Cloud,
+  SASL/PLAIN over TLS); services communicate exclusively through events — no
   synchronous HTTP calls in the critical path; zero data loss if consumers restart
 
 • Engineered HMAC-SHA256 signed webhook delivery with 5-attempt exponential backoff
