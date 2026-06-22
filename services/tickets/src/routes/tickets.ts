@@ -85,7 +85,7 @@ ticketsRouter.post('/', authenticate, async (req, res, next) => {
           title,
           description,
           priority,
-          JSON.stringify(tags),
+          tags,
           now,
         ],
       );
@@ -346,8 +346,8 @@ ticketsRouter.patch('/:id', authenticate, async (req, res, next) => {
     }
     if (updates.tags !== undefined) {
       setClauses.push(`tags = $${paramIndex++}`);
-      params.push(JSON.stringify(updates.tags));
-      changes.push({ field: 'tags', oldValue: existing.tags, newValue: JSON.stringify(updates.tags) });
+      params.push(updates.tags);
+      changes.push({ field: 'tags', oldValue: JSON.stringify(existing.tags), newValue: JSON.stringify(updates.tags) });
     }
 
     if (params.length > 0) {
