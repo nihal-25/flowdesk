@@ -43,13 +43,23 @@ app.get('/health', (_req, res) => {
 // tries to forward the request, the stream is already drained (0 bytes received
 // by the upstream). We re-serialize req.body back into the proxy request.
 function rewriteBody(proxyReq: import('http').ClientRequest, req: express.Request): void {
-  if (req.body && Object.keys(req.body).length > 0) {
-    const bodyData = JSON.stringify(req.body);
-    proxyReq.setHeader('Content-Type', 'application/json');
-    proxyReq.setHeader('Content-Length', Buffer.byteLength(bodyData));
-    proxyReq.write(bodyData);
-    proxyReq.end();
-  }
+  // If the client sent a body, express.json() already drained the stream, so the
+  // upstream would otherwise hang waiting for the bytes promised by the original
+  // Content-Length header. We must re-serialize req.body even when it parses to an
+  // empty object ({}). This is exactly what POST /auth/refresh sends ({} with a
+  // Content-Length of 2); skipping it left the upstream waiting forever, hanging
+  // the frontend on load (infinite spinner). Requests with no body (e.g. GETs) have
+  // no Content-Length/Transfer-Encoding and are left untouched for normal piping.
+  const hadBody =
+    req.headers['content-length'] !== undefined ||
+    req.headers['transfer-encoding'] !== undefined;
+  if (!hadBody) return;
+
+  const bodyData = JSON.stringify(req.body ?? {});
+  proxyReq.setHeader('Content-Type', 'application/json');
+  proxyReq.setHeader('Content-Length', Buffer.byteLength(bodyData));
+  proxyReq.write(bodyData);
+  proxyReq.end();
 }
 
 // ─── Auth routes (no JWT required — pass-through) ────────────────────────────
