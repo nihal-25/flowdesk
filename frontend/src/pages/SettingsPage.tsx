@@ -11,7 +11,7 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
 import { Modal } from '../components/ui/Modal';
-import type { ApiKey, WebhookEndpoint, Agent, PaginatedResponse, UserRole } from '../types';
+import type { ApiKey, WebhookEndpoint, Agent, UserRole } from '../types';
 
 type Tab = 'profile' | 'apikeys' | 'webhooks' | 'team';
 
@@ -552,8 +552,9 @@ function TeamTab() {
   const fetchAgents = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await api.get<{ success: boolean; data?: PaginatedResponse<Agent> }>('/agents?pageSize=100');
-      if (data.success && data.data) setAgents(data.data.items);
+      // /agents returns a bare array under `data`, not a paginated wrapper.
+      const { data } = await api.get<{ success: boolean; data?: Agent[] }>('/agents?pageSize=100');
+      if (data.success && Array.isArray(data.data)) setAgents(data.data);
     } catch { /* ignore */ } finally {
       setLoading(false);
     }

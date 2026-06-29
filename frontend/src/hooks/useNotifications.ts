@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
-import type { Notification, PaginatedResponse } from '../types';
+import type { Notification, NotificationListResponse } from '../types';
 
 export function useNotifications() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -10,9 +10,9 @@ export function useNotifications() {
   const fetchNotifications = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await api.get<{ success: boolean; data?: PaginatedResponse<Notification> }>('/notifications?pageSize=20');
+      const { data } = await api.get<{ success: boolean; data?: NotificationListResponse }>('/notifications?pageSize=20');
       if (data.success && data.data) {
-        setNotifications(data.data.items);
+        setNotifications(Array.isArray(data.data.notifications) ? data.data.notifications : []);
       }
     } catch { /* ignore */ } finally {
       setLoading(false);

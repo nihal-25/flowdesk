@@ -10,7 +10,7 @@ import { Select } from '../components/ui/Select';
 import { Modal } from '../components/ui/Modal';
 import { StatusBadge, PriorityBadge } from '../components/ui/Badge';
 import { useDebounce } from '../hooks/useDebounce';
-import type { Ticket, TicketPriority, PaginatedResponse, Agent } from '../types';
+import type { Ticket, TicketPriority, TicketListResponse, Agent } from '../types';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All statuses' },
@@ -65,19 +65,19 @@ export function TicketsPage() {
       const params = new URLSearchParams({
         page: String(page),
         pageSize: String(pageSize),
-        sortBy: 'createdAt',
+        sortBy: 'created_at',
         sortOrder: 'desc',
       });
       if (statusFilter) params.set('status', statusFilter);
       if (priorityFilter) params.set('priority', priorityFilter);
       if (debouncedSearch) params.set('search', debouncedSearch);
 
-      const { data } = await api.get<{ success: boolean; data?: PaginatedResponse<Ticket> }>(
+      const { data } = await api.get<{ success: boolean; data?: TicketListResponse }>(
         `/tickets?${params.toString()}`
       );
       if (data.success && data.data) {
-        setTickets(data.data.items);
-        setTotal(data.data.pagination.total);
+        setTickets(Array.isArray(data.data.tickets) ? data.data.tickets : []);
+        setTotal(data.data.total ?? 0);
       }
     } catch { /* ignore */ } finally {
       setLoading(false);
@@ -86,8 +86,9 @@ export function TicketsPage() {
 
   const fetchAgents = useCallback(async () => {
     try {
-      const { data } = await api.get<{ success: boolean; data?: PaginatedResponse<Agent> }>('/agents?pageSize=100');
-      if (data.success && data.data) setAgents(data.data.items);
+      // /agents returns a bare array under `data`, not a paginated wrapper.
+      const { data } = await api.get<{ success: boolean; data?: Agent[] }>('/agents?pageSize=100');
+      if (data.success && Array.isArray(data.data)) setAgents(data.data);
     } catch { /* ignore */ }
   }, []);
 

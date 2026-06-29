@@ -158,14 +158,40 @@ export interface AgentPerformance {
   isOnline: boolean;
 }
 
-export interface PaginatedResponse<T> {
-  items: T[];
-  pagination: {
-    total: number;
-    page: number;
-    pageSize: number;
-    totalPages: number;
-  };
+// ─── API response envelopes (match the live backend exactly) ──────────────────
+// The backend returns resource-named arrays with flat pagination fields, not a
+// generic { items, pagination } wrapper. Mismatches here previously caused the
+// frontend to call .map() on a non-array and blank the whole page.
+
+export interface TicketListResponse {
+  tickets: Ticket[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export interface NotificationListResponse {
+  notifications: Notification[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export interface AnalyticsOverviewResponse {
+  stats: AnalyticsOverview;
+  updatedAt: string;
+}
+
+export interface TicketVolumeResponse {
+  period: string;
+  dataPoints: TicketVolumePoint[];
+}
+
+export interface AgentPerformanceResponse {
+  agents: AgentPerformance[];
+  updatedAt: string;
 }
 
 export interface ApiResponse<T> {

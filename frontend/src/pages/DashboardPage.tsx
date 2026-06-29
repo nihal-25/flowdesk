@@ -17,7 +17,9 @@ import type {
   AnalyticsOverview,
   TicketVolumePoint,
   Ticket as TicketType,
-  PaginatedResponse,
+  AnalyticsOverviewResponse,
+  TicketVolumeResponse,
+  TicketListResponse,
 } from '../types';
 
 function formatDuration(ms: number): string {
@@ -67,19 +69,21 @@ export function DashboardPage() {
     setLoading(true);
     try {
       const [overviewRes, volumeRes, ticketsRes] = await Promise.allSettled([
-        api.get<{ success: boolean; data?: AnalyticsOverview }>('/analytics/overview'),
-        api.get<{ success: boolean; data?: TicketVolumePoint[] }>('/analytics/tickets?period=7d'),
-        api.get<{ success: boolean; data?: PaginatedResponse<TicketType> }>('/tickets?pageSize=10&sortBy=createdAt&sortOrder=desc'),
+        api.get<{ success: boolean; data?: AnalyticsOverviewResponse }>('/analytics/overview'),
+        api.get<{ success: boolean; data?: TicketVolumeResponse }>('/analytics/tickets?period=7d'),
+        api.get<{ success: boolean; data?: TicketListResponse }>('/tickets?pageSize=10&sortBy=created_at&sortOrder=desc'),
       ]);
 
       if (overviewRes.status === 'fulfilled' && overviewRes.value.data.success) {
-        setOverview(overviewRes.value.data.data ?? null);
+        setOverview(overviewRes.value.data.data?.stats ?? null);
       }
       if (volumeRes.status === 'fulfilled' && volumeRes.value.data.success) {
-        setVolumeData(volumeRes.value.data.data ?? []);
+        const points = volumeRes.value.data.data?.dataPoints;
+        setVolumeData(Array.isArray(points) ? points : []);
       }
       if (ticketsRes.status === 'fulfilled' && ticketsRes.value.data.success) {
-        setRecentTickets(ticketsRes.value.data.data?.items ?? []);
+        const items = ticketsRes.value.data.data?.tickets;
+        setRecentTickets(Array.isArray(items) ? items : []);
       }
     } finally {
       setLoading(false);

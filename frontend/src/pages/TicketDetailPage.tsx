@@ -13,9 +13,11 @@ import { Button } from '../components/ui/Button';
 import { Select } from '../components/ui/Select';
 import { StatusBadge, PriorityBadge } from '../components/ui/Badge';
 import type {
-  Ticket, Message, TicketEvent,
-  Agent, PaginatedResponse,
+  Ticket, Message, TicketEvent, Agent,
 } from '../types';
+
+// GET /tickets/:id returns the ticket with messages and events embedded.
+type TicketDetail = Ticket & { messages?: Message[]; events?: TicketEvent[] };
 
 const STATUS_OPTIONS = [
   { value: 'open', label: 'Open' },
@@ -57,46 +59,32 @@ export function TicketDetailPage() {
   const fetchTicket = useCallback(async () => {
     if (!id) return;
     try {
-      const { data } = await api.get<{ success: boolean; data?: Ticket }>(`/tickets/${id}`);
-      if (data.success && data.data) setTicket(data.data);
-    } catch { /* ignore */ }
-  }, [id]);
-
-  const fetchMessages = useCallback(async () => {
-    if (!id) return;
-    try {
-      const { data } = await api.get<{ success: boolean; data?: PaginatedResponse<Message> }>(
-        `/tickets/${id}/messages?pageSize=100&sortOrder=asc`
-      );
-      if (data.success && data.data) setMessages(data.data.items);
-    } catch { /* ignore */ }
-  }, [id]);
-
-  const fetchEvents = useCallback(async () => {
-    if (!id) return;
-    try {
-      const { data } = await api.get<{ success: boolean; data?: TicketEvent[] }>(
-        `/tickets/${id}/events`
-      );
-      if (data.success && data.data) setEvents(data.data);
+      const { data } = await api.get<{ success: boolean; data?: TicketDetail }>(`/tickets/${id}`);
+      if (data.success && data.data) {
+        setTicket(data.data);
+        // messages and events are embedded in the ticket detail response
+        setMessages(Array.isArray(data.data.messages) ? data.data.messages : []);
+        setEvents(Array.isArray(data.data.events) ? data.data.events : []);
+      }
     } catch { /* ignore */ }
   }, [id]);
 
   const fetchAgents = useCallback(async () => {
     try {
-      const { data } = await api.get<{ success: boolean; data?: PaginatedResponse<Agent> }>('/agents?pageSize=100');
-      if (data.success && data.data) setAgents(data.data.items);
+      // /agents returns a bare array under `data`, not a paginated wrapper.
+      const { data } = await api.get<{ success: boolean; data?: Agent[] }>('/agents?pageSize=100');
+      if (data.success && Array.isArray(data.data)) setAgents(data.data);
     } catch { /* ignore */ }
   }, []);
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      await Promise.all([fetchTicket(), fetchMessages(), fetchEvents(), fetchAgents()]);
+      await Promise.all([fetchTicket(), fetchAgents()]);
       setLoading(false);
     };
     void load();
-  }, [fetchTicket, fetchMessages, fetchEvents, fetchAgents]);
+  }, [fetchTicket, fetchAgents]);
 
   // Scroll to bottom when messages load
   useEffect(() => {
@@ -193,7 +181,8 @@ export function TicketDetailPage() {
       );
       if (data.success && data.data) {
         setTicket(data.data);
-        await fetchEvents();
+        // refresh the ticket to pick up the new timeline event (events are embedded)
+        await fetchTicket();
       }
     } catch { /* ignore */ }
   };
@@ -206,7 +195,8 @@ export function TicketDetailPage() {
       );
       if (data.success && data.data) {
         setTicket(data.data);
-        await fetchEvents();
+        // refresh the ticket to pick up the new timeline event (events are embedded)
+        await fetchTicket();
       }
     } catch { /* ignore */ }
   };
@@ -219,7 +209,8 @@ export function TicketDetailPage() {
       );
       if (data.success && data.data) {
         setTicket(data.data);
-        await fetchEvents();
+        // refresh the ticket to pick up the new timeline event (events are embedded)
+        await fetchTicket();
       }
     } catch { /* ignore */ }
   };

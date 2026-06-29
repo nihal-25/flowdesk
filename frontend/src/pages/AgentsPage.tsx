@@ -7,7 +7,7 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
 import { Modal } from '../components/ui/Modal';
-import type { Agent, PaginatedResponse, UserRole } from '../types';
+import type { Agent, UserRole } from '../types';
 
 const ROLE_OPTIONS = [
   { value: 'agent', label: 'Agent' },
@@ -47,12 +47,13 @@ export function AgentsPage() {
   const fetchAgents = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await api.get<{ success: boolean; data?: PaginatedResponse<Agent> }>(
-        '/agents?pageSize=100&sortBy=createdAt&sortOrder=desc'
+      // /agents returns a bare array under `data`, not a paginated wrapper.
+      const { data } = await api.get<{ success: boolean; data?: Agent[] }>(
+        '/agents?pageSize=100'
       );
-      if (data.success && data.data) {
-        setAgents(data.data.items);
-        setTotal(data.data.pagination.total);
+      if (data.success && Array.isArray(data.data)) {
+        setAgents(data.data);
+        setTotal(data.data.length);
       }
     } catch { /* ignore */ } finally {
       setLoading(false);

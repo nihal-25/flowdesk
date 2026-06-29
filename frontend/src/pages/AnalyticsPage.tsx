@@ -7,7 +7,10 @@ import { format } from 'date-fns';
 import { TrendingUp, Clock, Users, Ticket, Circle } from 'lucide-react';
 import { api } from '../lib/api';
 import { Card } from '../components/ui/Card';
-import type { AnalyticsOverview, TicketVolumePoint, AgentPerformance } from '../types';
+import type {
+  AnalyticsOverview, TicketVolumePoint, AgentPerformance,
+  AnalyticsOverviewResponse, TicketVolumeResponse, AgentPerformanceResponse,
+} from '../types';
 
 function formatDuration(ms: number): string {
   if (!ms || ms <= 0) return '—';
@@ -55,19 +58,21 @@ export function AnalyticsPage() {
     setLoading(true);
     try {
       const [overviewRes, volumeRes, agentRes] = await Promise.allSettled([
-        api.get<{ success: boolean; data?: AnalyticsOverview }>('/analytics/overview'),
-        api.get<{ success: boolean; data?: TicketVolumePoint[] }>(`/analytics/tickets?period=${period}`),
-        api.get<{ success: boolean; data?: AgentPerformance[] }>('/analytics/agents'),
+        api.get<{ success: boolean; data?: AnalyticsOverviewResponse }>('/analytics/overview'),
+        api.get<{ success: boolean; data?: TicketVolumeResponse }>(`/analytics/tickets?period=${period}`),
+        api.get<{ success: boolean; data?: AgentPerformanceResponse }>('/analytics/agents'),
       ]);
 
       if (overviewRes.status === 'fulfilled' && overviewRes.value.data.success) {
-        setOverview(overviewRes.value.data.data ?? null);
+        setOverview(overviewRes.value.data.data?.stats ?? null);
       }
       if (volumeRes.status === 'fulfilled' && volumeRes.value.data.success) {
-        setVolumeData(volumeRes.value.data.data ?? []);
+        const points = volumeRes.value.data.data?.dataPoints;
+        setVolumeData(Array.isArray(points) ? points : []);
       }
       if (agentRes.status === 'fulfilled' && agentRes.value.data.success) {
-        setAgentPerformance(agentRes.value.data.data ?? []);
+        const perf = agentRes.value.data.data?.agents;
+        setAgentPerformance(Array.isArray(perf) ? perf : []);
       }
     } finally {
       setLoading(false);
