@@ -494,7 +494,9 @@ router.post('/invite', async (req: Request, res: Response, next: NextFunction) =
     // The invite record is already persisted, so respond success immediately.
     // Email delivery is best-effort and must never block or fail the request —
     // a slow/misconfigured SMTP server previously hung the whole invite call.
-    res.success({ message: `Invitation created for ${email}` }, 201);
+    // inviteUrl is returned so the admin can copy/share the link directly (and
+    // so the invite still works if the email is delayed or undelivered).
+    res.success({ message: `Invitation created for ${email}`, inviteUrl }, 201);
 
     // Fire-and-forget the email. sendInviteEmail has its own HTTP timeout; we
     // also cap the total time and swallow any error so it can't crash the process.
