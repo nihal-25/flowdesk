@@ -1,25 +1,50 @@
-import nodemailer from 'nodemailer';
 import { config } from '../config.js';
 
-let transporter: nodemailer.Transporter | null = null;
+const RESEND_ENDPOINT = 'https://api.resend.com/emails';
 
-function getTransporter(): nodemailer.Transporter {
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
-      host: config.SMTP_HOST,
-      port: config.SMTP_PORT,
-      secure: config.SMTP_PORT === 465,
-      auth: config.SMTP_USER && config.SMTP_PASSWORD
-        ? { user: config.SMTP_USER, pass: config.SMTP_PASSWORD }
-        : undefined,
-      // Hard timeouts so a slow/unreachable SMTP server can never hang the
-      // request indefinitely (Gmail egress from the host can stall otherwise).
-      connectionTimeout: 8000, // time to establish the TCP connection
-      greetingTimeout: 8000,   // time to receive the SMTP greeting
-      socketTimeout: 10000,    // inactivity timeout once connected
-    });
+/**
+ * Sends an email via the Resend HTTP API (https://resend.com).
+ *
+ * We deliberately use Resend's HTTPS API (port 443) instead of SMTP: Railway —
+ * like most PaaS hosts — blocks outbound SMTP ports (25/465/587), so the old
+ * Gmail/Nodemailer transport always failed with "Connection timeout". HTTPS is
+ * not blocked, so this delivers reliably from the cloud host.
+ *
+ * Throws on any non-2xx response or timeout so callers (which run this
+ * fire-and-forget) can log the real reason.
+ */
+async function sendEmail(opts: { to: string; subject: string; html: string }): Promise<void> {
+  if (!config.RESEND_API_KEY) {
+    console.info('[email] RESEND_API_KEY not configured — skipping email to:', opts.to);
+    return;
   }
-  return transporter;
+
+  // Own timeout so a hung HTTP call can never block indefinitely.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  try {
+    const resp = await fetch(RESEND_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: config.EMAIL_FROM,
+        to: [opts.to],
+        subject: opts.subject,
+        html: opts.html,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '');
+      throw new Error(`Resend API responded ${resp.status}: ${body.slice(0, 300)}`);
+    }
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function sendInviteEmail(opts: {
@@ -29,13 +54,7 @@ export async function sendInviteEmail(opts: {
   tenantName: string;
   inviteUrl: string;
 }): Promise<void> {
-  if (!config.SMTP_USER) {
-    console.info('[email] SMTP not configured — skipping invite email to:', opts.to);
-    return;
-  }
-
-  await getTransporter().sendMail({
-    from: config.EMAIL_FROM,
+  await sendEmail({
     to: opts.to,
     subject: `You've been invited to ${opts.tenantName} on FlowDesk`,
     html: `
@@ -63,10 +82,7 @@ export async function sendTicketResolvedEmail(opts: {
   ticketId: string;
   dashboardUrl: string;
 }): Promise<void> {
-  if (!config.SMTP_USER) return;
-
-  await getTransporter().sendMail({
-    from: config.EMAIL_FROM,
+  await sendEmail({
     to: opts.to,
     subject: `Your support ticket has been resolved`,
     html: `
@@ -91,10 +107,7 @@ export async function sendNotificationEmail(opts: {
   subject: string;
   body: string;
 }): Promise<void> {
-  if (!config.SMTP_USER) return;
-
-  await getTransporter().sendMail({
-    from: config.EMAIL_FROM,
+  await sendEmail({
     to: opts.to,
     subject: opts.subject,
     html: `

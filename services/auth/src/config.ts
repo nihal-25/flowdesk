@@ -27,7 +27,10 @@ const envSchema = z.object({
   KAFKA_SASL_USERNAME: z.string().min(1),
   KAFKA_SASL_PASSWORD: z.string().min(1),
 
-  // Email (Nodemailer / Gmail)
+  // Email — Resend HTTP API (Railway blocks outbound SMTP ports, so we send
+  // over HTTPS instead of SMTP). SMTP_* are kept optional for backwards-compat
+  // but are no longer used by the email transport.
+  RESEND_API_KEY: z.string().optional(),
   SMTP_HOST: z.string().default('smtp.gmail.com'),
   SMTP_PORT: z.coerce.number().default(587),
   SMTP_USER: z.string().optional(),

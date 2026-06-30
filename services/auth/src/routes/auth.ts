@@ -496,7 +496,7 @@ router.post('/invite', async (req: Request, res: Response, next: NextFunction) =
     // a slow/misconfigured SMTP server previously hung the whole invite call.
     res.success({ message: `Invitation created for ${email}` }, 201);
 
-    // Fire-and-forget the email. sendInviteEmail has its own SMTP timeouts; we
+    // Fire-and-forget the email. sendInviteEmail has its own HTTP timeout; we
     // also cap the total time and swallow any error so it can't crash the process.
     void withTimeout(
       sendInviteEmail({
