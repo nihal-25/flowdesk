@@ -1,4 +1,15 @@
+import axios from 'axios';
 import { api } from './api';
+
+/** Extracts a human-readable reason from an axios/unknown error. */
+function errReason(e: unknown): string {
+  if (axios.isAxiosError(e)) {
+    const status = e.response?.status;
+    const msg = (e.response?.data as { error?: { message?: string } } | undefined)?.error?.message;
+    return `${status ?? 'network'}${msg ? ` ${msg}` : ` ${e.message}`}`;
+  }
+  return e instanceof Error ? e.message : 'Unknown error';
+}
 
 export async function loadDemoData(): Promise<{ success: boolean; message: string }> {
   try {
@@ -20,24 +31,29 @@ export async function loadDemoData(): Promise<{ success: boolean; message: strin
     for (const ticket of ticketData) {
       try {
         const { data } = await api.post<{ success: boolean; data?: { id: string } }>('/tickets', ticket);
-        if (data.success && data.data) {
-          createdTickets.push(data.data);
-        }
-      } catch { /* ticket might already exist */ }
+        if (data.success && data.data) createdTickets.push(data.data);
+      } catch { /* a single ticket failing is non-fatal */ }
     }
 
     // Create the demo agents (Sarah Chen, Marcus Johnson, Priya Patel) directly
-    // in the tenant so the Agents page and analytics show a real team.
+    // in the tenant. This is a core part of "demo data" — if it fails we surface
+    // the real reason instead of silently swallowing it.
     const demoAgents: { id: string }[] = [];
+    let agentError = '';
     try {
       const { data } = await api.post<{ success: boolean; data?: { agents: { id: string }[] } }>('/auth/demo-agents');
-      if (data.success && data.data?.agents) {
-        demoAgents.push(...data.data.agents);
+      if (data.success && Array.isArray(data.data?.agents)) {
+        demoAgents.push(...data.data!.agents);
+      } else {
+        agentError = `unexpected response shape: ${JSON.stringify(data).slice(0, 160)}`;
       }
-    } catch { /* agents may already exist */ }
+    } catch (e) {
+      agentError = errReason(e);
+    }
 
     // Assign a realistic subset of tickets to the agents (round-robin), leaving
     // some unassigned so the board shows a mix.
+    let assignedCount = 0;
     if (demoAgents.length > 0) {
       const assignments = [0, 1, 3, 4, 6, 7]; // ticket indexes to assign
       for (let i = 0; i < assignments.length; i++) {
@@ -46,7 +62,8 @@ export async function loadDemoData(): Promise<{ success: boolean; message: strin
         if (!ticket || !agent) continue;
         try {
           await api.patch(`/tickets/${ticket.id}`, { assignedTo: agent.id });
-        } catch { /* ignore */ }
+          assignedCount++;
+        } catch { /* a single assignment failing is non-fatal */ }
       }
     }
 
@@ -56,7 +73,6 @@ export async function loadDemoData(): Promise<{ success: boolean; message: strin
       'I am investigating this now. Looks like a configuration issue.',
       'Found the root cause — pushing a fix in 30 minutes.',
     ];
-
     for (let i = 0; i < Math.min(3, createdTickets.length); i++) {
       const ticket = createdTickets[i];
       if (!ticket) continue;
@@ -67,26 +83,37 @@ export async function loadDemoData(): Promise<{ success: boolean; message: strin
       }
     }
 
-    // Update some ticket statuses
-    const statusUpdates: Array<{ status: 'in_progress' | 'resolved' }> = [
-      { status: 'in_progress' },
-      { status: 'resolved' },
-      { status: 'in_progress' },
+    // Move a couple tickets along the workflow (open -> in_progress -> resolved).
+    // Note: status transitions are validated server-side, so step through them.
+    const progressions: string[][] = [
+      ['in_progress'],
+      ['in_progress', 'resolved'],
+      ['in_progress'],
     ];
-
-    for (let i = 0; i < Math.min(statusUpdates.length, createdTickets.length); i++) {
+    for (let i = 0; i < Math.min(progressions.length, createdTickets.length); i++) {
       const ticket = createdTickets[i];
       if (!ticket) continue;
-      try {
-        await api.patch(`/tickets/${ticket.id}`, statusUpdates[i]);
-      } catch { /* ignore */ }
+      for (const status of progressions[i]!) {
+        try {
+          await api.patch(`/tickets/${ticket.id}`, { status });
+        } catch { /* ignore */ }
+      }
+    }
+
+    // Agents are a core part of demo data — if none were created, report failure
+    // with the real reason rather than a misleading success.
+    if (demoAgents.length === 0) {
+      return {
+        success: false,
+        message: `Created ${createdTickets.length} tickets, but agent creation FAILED (${agentError || 'no agents returned'}). Try again or check the auth service.`,
+      };
     }
 
     return {
       success: true,
-      message: `Created ${createdTickets.length} demo tickets and ${demoAgents.length} agents with assignments.`,
+      message: `Created ${createdTickets.length} tickets, ${demoAgents.length} agents, and ${assignedCount} assignments.`,
     };
   } catch (err) {
-    return { success: false, message: `Demo data failed: ${err instanceof Error ? err.message : 'Unknown error'}` };
+    return { success: false, message: `Demo data failed: ${errReason(err)}` };
   }
 }
