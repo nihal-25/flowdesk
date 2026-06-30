@@ -10,8 +10,16 @@ interface AuthState {
   setAccessToken: (token: string, expiresIn: number) => void;
   login: (email: string, password: string) => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
+  acceptInvite: (data: AcceptInviteData) => Promise<void>;
   logout: () => Promise<void>;
   fetchMe: () => Promise<void>;
+}
+
+interface AcceptInviteData {
+  token: string;
+  password: string;
+  firstName?: string;
+  lastName?: string;
 }
 
 interface RegisterData {
@@ -68,6 +76,16 @@ export const useAuthStore = create<AuthState>((set, get) => {
 
     register: async (input) => {
       const { data } = await api.post<{ success: boolean; data?: { accessToken: string; expiresIn: number } }>('/auth/register', input);
+      if (data.success && data.data) {
+        get().setAccessToken(data.data.accessToken, data.data.expiresIn);
+        await get().fetchMe();
+      }
+    },
+
+    acceptInvite: async (input) => {
+      // Accepting an invite creates/activates the user in the inviting tenant and
+      // returns a fresh session, replacing any currently logged-in user.
+      const { data } = await api.post<{ success: boolean; data?: { accessToken: string; expiresIn: number } }>('/auth/accept-invite', input);
       if (data.success && data.data) {
         get().setAccessToken(data.data.accessToken, data.data.expiresIn);
         await get().fetchMe();

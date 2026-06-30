@@ -569,6 +569,56 @@ router.post('/demo-agents', async (req: Request, res: Response, next: NextFuncti
 });
 
 /**
+ * GET /auth/invite/:token
+ * Public — returns invite details so the accept page can show "You've been
+ * invited to <workspace> as <role>" before the user sets a password. Does NOT
+ * consume the token.
+ */
+router.get('/invite/:token', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const token = req.params['token'];
+    if (!token) throw new ValidationError('Missing invite token');
+
+    const tokenHash = hashToken(token);
+    const invite = await queryOne<{
+      email: string;
+      first_name: string;
+      last_name: string;
+      role: string;
+      expires_at: Date;
+      used_at: Date | null;
+      tenant_name: string;
+    }>(
+      `SELECT it.email, it.first_name, it.last_name, it.role, it.expires_at, it.used_at,
+              t.name AS tenant_name
+       FROM invite_tokens it
+       JOIN tenants t ON t.id = it.tenant_id
+       WHERE it.token_hash = $1`,
+      [tokenHash],
+    );
+
+    if (!invite) throw new AuthError('Invalid invite token', ERROR_CODES.INVITE_INVALID);
+
+    const status = invite.used_at
+      ? 'used'
+      : invite.expires_at < new Date()
+        ? 'expired'
+        : 'valid';
+
+    res.success({
+      email: invite.email,
+      firstName: invite.first_name,
+      lastName: invite.last_name,
+      role: invite.role,
+      tenantName: invite.tenant_name,
+      status,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * POST /auth/accept-invite
  */
 router.post('/accept-invite', async (req: Request, res: Response, next: NextFunction) => {
@@ -604,6 +654,16 @@ router.post('/accept-invite', async (req: Request, res: Response, next: NextFunc
     if (!dbToken) throw new AuthError('Invalid or expired invite token', ERROR_CODES.INVITE_INVALID);
     if (dbToken.used_at) throw new AuthError('Invite token already used', ERROR_CODES.INVITE_INVALID);
     if (dbToken.expires_at < new Date()) throw new AuthError('Invite token has expired', ERROR_CODES.INVITE_EXPIRED);
+
+    // Guard the UNIQUE(tenant_id, email) constraint so a double-accept or an
+    // email that already belongs to the workspace returns a clear error, not a 500.
+    const alreadyMember = await queryOne<{ id: string }>(
+      `SELECT id FROM users WHERE tenant_id = $1 AND email = $2`,
+      [dbToken.tenant_id, dbToken.email],
+    );
+    if (alreadyMember) {
+      throw new ConflictError('This email is already a member of the workspace. Try logging in instead.');
+    }
 
     const firstName = newFirstName ?? dbToken.first_name;
     const lastName = newLastName ?? dbToken.last_name;
