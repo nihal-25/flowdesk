@@ -44,3 +44,7 @@ coverage/
 *.local
 *.tmp
 *.temp
+
+.vercel
+
+scripts/*.png

@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
+    "playwright": "^1.61.1",
     "typescript": "^5.4.5"
   },
   "engines": {
