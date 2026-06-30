@@ -90,6 +90,16 @@ function clearRefreshCookie(res: Response): void {
   res.clearCookie(REFRESH_COOKIE_NAME, { path: '/auth' });
 }
 
+/** Rejects if the wrapped promise doesn't settle within `ms` milliseconds. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`Operation timed out after ${ms}ms`)), ms),
+    ),
+  ]);
+}
+
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 /**
@@ -481,15 +491,78 @@ router.post('/invite', async (req: Request, res: Response, next: NextFunction) =
 
     const inviteUrl = `${config.CORS_ORIGINS.split(',')[0] ?? 'http://localhost:5173'}/accept-invite?token=${inviteToken}`;
 
-    await sendInviteEmail({
-      to: email,
-      firstName,
-      inviterName: inviter ? `${inviter.first_name} ${inviter.last_name}` : 'A team member',
-      tenantName: tenant?.name ?? 'your team',
-      inviteUrl,
-    });
+    // The invite record is already persisted, so respond success immediately.
+    // Email delivery is best-effort and must never block or fail the request —
+    // a slow/misconfigured SMTP server previously hung the whole invite call.
+    res.success({ message: `Invitation created for ${email}` }, 201);
 
-    res.success({ message: `Invitation sent to ${email}` }, 201);
+    // Fire-and-forget the email. sendInviteEmail has its own SMTP timeouts; we
+    // also cap the total time and swallow any error so it can't crash the process.
+    void withTimeout(
+      sendInviteEmail({
+        to: email,
+        firstName,
+        inviterName: inviter ? `${inviter.first_name} ${inviter.last_name}` : 'A team member',
+        tenantName: tenant?.name ?? 'your team',
+        inviteUrl,
+      }),
+      12000,
+    ).then(
+      () => console.info('[auth:invite] Invite email dispatched to', email),
+      (err) => console.error('[auth:invite] Invite email failed (invite still created) for', email, '-', err instanceof Error ? err.message : err),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /auth/demo-agents
+ * Creates the 3 demo agent accounts directly in the caller's tenant (no invite
+ * email/accept step). Idempotent — re-running won't create duplicates. Used by
+ * the "Load Demo Data" button so the team/agents views have realistic data.
+ */
+const DEMO_AGENTS = [
+  { firstName: 'Sarah', lastName: 'Chen', email: 'sarah.chen@demo.flowdesk.app' },
+  { firstName: 'Marcus', lastName: 'Johnson', email: 'marcus.johnson@demo.flowdesk.app' },
+  { firstName: 'Priya', lastName: 'Patel', email: 'priya.patel@demo.flowdesk.app' },
+] as const;
+
+router.post('/demo-agents', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) throw new AuthError();
+    const payload = verifyAccessToken(authHeader.slice(7));
+    if (!['admin', 'superadmin'].includes(payload.role)) throw new ForbiddenError();
+
+    // Shared password for all demo agents so they can be logged into if desired.
+    const hashed = await hashPassword('DemoAgent!2024');
+
+    for (const agent of DEMO_AGENTS) {
+      await query(
+        `INSERT INTO users (tenant_id, email, first_name, last_name, role, hashed_password, is_active)
+         VALUES ($1, $2, $3, $4, 'agent', $5, true)
+         ON CONFLICT (tenant_id, email) DO NOTHING`,
+        [payload.tid, agent.email, agent.firstName, agent.lastName, hashed],
+      );
+    }
+
+    // Re-read to return ids for both freshly-created and pre-existing agents.
+    const rows = await query<{ id: string; email: string; first_name: string; last_name: string }>(
+      `SELECT id, email, first_name, last_name
+       FROM users
+       WHERE tenant_id = $1 AND email = ANY($2::text[])`,
+      [payload.tid, DEMO_AGENTS.map((a) => a.email)],
+    );
+
+    res.success({
+      agents: rows.rows.map((r) => ({
+        id: r.id,
+        email: r.email,
+        firstName: r.first_name,
+        lastName: r.last_name,
+      })),
+    }, 201);
   } catch (err) {
     next(err);
   }

@@ -26,6 +26,30 @@ export async function loadDemoData(): Promise<{ success: boolean; message: strin
       } catch { /* ticket might already exist */ }
     }
 
+    // Create the demo agents (Sarah Chen, Marcus Johnson, Priya Patel) directly
+    // in the tenant so the Agents page and analytics show a real team.
+    const demoAgents: { id: string }[] = [];
+    try {
+      const { data } = await api.post<{ success: boolean; data?: { agents: { id: string }[] } }>('/auth/demo-agents');
+      if (data.success && data.data?.agents) {
+        demoAgents.push(...data.data.agents);
+      }
+    } catch { /* agents may already exist */ }
+
+    // Assign a realistic subset of tickets to the agents (round-robin), leaving
+    // some unassigned so the board shows a mix.
+    if (demoAgents.length > 0) {
+      const assignments = [0, 1, 3, 4, 6, 7]; // ticket indexes to assign
+      for (let i = 0; i < assignments.length; i++) {
+        const ticket = createdTickets[assignments[i]!];
+        const agent = demoAgents[i % demoAgents.length];
+        if (!ticket || !agent) continue;
+        try {
+          await api.patch(`/tickets/${ticket.id}`, { assignedTo: agent.id });
+        } catch { /* ignore */ }
+      }
+    }
+
     // Add messages to first few tickets
     const messages = [
       'Hi team, can someone look into this urgently? Our customers are impacted.',
@@ -58,7 +82,10 @@ export async function loadDemoData(): Promise<{ success: boolean; message: strin
       } catch { /* ignore */ }
     }
 
-    return { success: true, message: `Created ${createdTickets.length} demo tickets with messages and status updates.` };
+    return {
+      success: true,
+      message: `Created ${createdTickets.length} demo tickets and ${demoAgents.length} agents with assignments.`,
+    };
   } catch (err) {
     return { success: false, message: `Demo data failed: ${err instanceof Error ? err.message : 'Unknown error'}` };
   }

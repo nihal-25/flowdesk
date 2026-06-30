@@ -12,6 +12,11 @@ function getTransporter(): nodemailer.Transporter {
       auth: config.SMTP_USER && config.SMTP_PASSWORD
         ? { user: config.SMTP_USER, pass: config.SMTP_PASSWORD }
         : undefined,
+      // Hard timeouts so a slow/unreachable SMTP server can never hang the
+      // request indefinitely (Gmail egress from the host can stall otherwise).
+      connectionTimeout: 8000, // time to establish the TCP connection
+      greetingTimeout: 8000,   // time to receive the SMTP greeting
+      socketTimeout: 10000,    // inactivity timeout once connected
     });
   }
   return transporter;
