@@ -17,12 +17,14 @@ const readState = () => {
     const t = ps.find((p) => p.textContent?.trim() === title);
     return t?.nextElementSibling?.textContent?.trim() ?? '?';
   };
+  const msgMatch = document.body.innerText.match(/Created \d+ tickets, \d+ agents, and \d+ assignments\./);
   return {
     openTickets: valueByTitle('Open Tickets'),
     activeAgents: valueByTitle('Active Agents'),
     chartHasData: !/No data yet/.test(document.body.innerText),
     recentTicketsRows: document.querySelectorAll('table tbody tr').length,
     hasNoTicketsEmpty: /No tickets yet/.test(document.body.innerText),
+    seedMessage: msgMatch ? msgMatch[0] : null,
   };
 };
 
@@ -53,6 +55,7 @@ async function main() {
   const tClick = Date.now();
   let tComplete = null;   // when the seed finished (button re-enabled)
   let tUpdated = null;    // when the dashboard reflected the data
+  let seedSeconds = null;
   let last = before;
 
   for (let i = 0; i < 120; i++) {         // up to ~36s
@@ -63,7 +66,8 @@ async function main() {
 
     if (tComplete === null && !disabled && i > 1) {
       tComplete = Date.now();
-      log(`   demo seed completed at t+${((tComplete - tClick) / 1000).toFixed(1)}s (from click)`);
+      seedSeconds = ((tComplete - tClick) / 1000).toFixed(1);
+      log(`   >>> SEED COMPLETED in ${seedSeconds}s (was ~16s before parallelizing)`);
     }
     const cardsUpdated = !['—', '0', '?'].includes(s.openTickets);
     const ticketsUpdated = s.recentTicketsRows > 0 && !s.hasNoTicketsEmpty;
@@ -87,8 +91,12 @@ async function main() {
   const ticketsOk = after.recentTicketsRows > 0;
   const chartOk = after.chartHasData;
   const fast = refreshLatency !== null && parseFloat(refreshLatency) <= 5;
-  const pass = cardsOk && ticketsOk && chartOk && fast;
-  log(`RESULT: ${pass ? 'PASS ✅' : 'FAIL ❌'}  latency=${refreshLatency}s openTickets=${after.openTickets} activeAgents=${after.activeAgents} recentRows=${after.recentTicketsRows} chart=${chartOk}`);
+  const countsOk = after.seedMessage === 'Created 10 tickets, 3 agents, and 6 assignments.';
+  const seedFast = seedSeconds !== null && parseFloat(seedSeconds) <= 7;
+  const pass = cardsOk && ticketsOk && chartOk && fast && countsOk && seedFast;
+  log(`\n   seed message: "${after.seedMessage}"`);
+  log(`   seed time: ${seedSeconds}s | refresh latency: ${refreshLatency}s`);
+  log(`RESULT: ${pass ? 'PASS ✅' : 'FAIL ❌'}  seed=${seedSeconds}s(≤7:${seedFast}) counts=${countsOk} refresh=${refreshLatency}s openTickets=${after.openTickets} activeAgents=${after.activeAgents} recentRows=${after.recentTicketsRows} chart=${chartOk}`);
   process.exit(pass ? 0 : 1);
 }
 
