@@ -17,7 +17,7 @@ async function api(path, method = 'get', body, token) {
 }
 
 async function login(page, email) {
-  await page.goto(`${SITE}/login`, { waitUntil: 'networkidle' });
+  await page.goto(`${SITE}/login`, { waitUntil: 'domcontentloaded' });
   await page.getByLabel('Work email').fill(email);
   await page.getByLabel('Password', { exact: true }).fill(PW);
   await page.getByRole('button', { name: 'Sign in' }).click();
@@ -50,8 +50,8 @@ async function main() {
 
   // ── ISSUE A: real-time messages in two contexts ──
   log('\n── ISSUE A: real-time messages ──');
-  await pageA.goto(`${SITE}/tickets/${ticket.id}`, { waitUntil: 'networkidle' });
-  await pageB.goto(`${SITE}/tickets/${ticket.id}`, { waitUntil: 'networkidle' });
+  await pageA.goto(`${SITE}/tickets/${ticket.id}`, { waitUntil: 'domcontentloaded' });
+  await pageB.goto(`${SITE}/tickets/${ticket.id}`, { waitUntil: 'domcontentloaded' });
   await pageA.waitForTimeout(2000);
   const msg = `hello-realtime-${ts}`;
   await pageA.getByPlaceholder(/Type a reply/).fill(msg);
@@ -75,7 +75,7 @@ async function main() {
 
   // ── ISSUE B: new ticket appears in list without refresh ──
   log('\n── ISSUE B: ticket list live ──');
-  await pageA.goto(`${SITE}/tickets`, { waitUntil: 'networkidle' });
+  await pageA.goto(`${SITE}/tickets`, { waitUntil: 'domcontentloaded' });
   await pageA.waitForTimeout(1500);
   await pageA.getByRole('button', { name: /New Ticket/i }).click();
   await pageA.waitForTimeout(500);
@@ -93,7 +93,7 @@ async function main() {
 
   // ── ISSUE C: Active Agents presence ──
   log('\n── ISSUE C: presence / Active Agents ──');
-  await pageA.goto(`${SITE}/dashboard`, { waitUntil: 'networkidle' });
+  await pageA.goto(`${SITE}/dashboard`, { waitUntil: 'domcontentloaded' });
   const readActive = () => pageA.evaluate(() => {
     const ps = [...document.querySelectorAll('p')];
     const t = ps.find((p) => p.textContent?.trim() === 'Active Agents');
@@ -115,7 +115,7 @@ async function main() {
   const ctxB2 = await browser.newContext();
   const pageB2 = await ctxB2.newPage();
   await login(pageB2, agentEmail);
-  await pageB2.goto(`${SITE}/dashboard`, { waitUntil: 'networkidle' });
+  await pageB2.goto(`${SITE}/dashboard`, { waitUntil: 'domcontentloaded' });
   await pageB2.waitForTimeout(1500);
   // A assigns the ticket to B -> B should get a live notification + toast
   await api(`/tickets/${ticket.id}`, 'patch', { assignedTo: bId }, tokenA);
@@ -133,7 +133,7 @@ async function main() {
 
   // ── ISSUE E: agents page controls ──
   log('\n── ISSUE E: agents deactivate + role ──');
-  await pageA.goto(`${SITE}/agents`, { waitUntil: 'networkidle' });
+  await pageA.goto(`${SITE}/agents`, { waitUntil: 'domcontentloaded' });
   await pageA.waitForTimeout(1500);
   // Members sort active-first then by first name: Ada (admin/self) is nth 0,
   // Bob (agent) is nth 1. Click Bob's Deactivate via the real UI button.
@@ -146,7 +146,7 @@ async function main() {
   await pageA.waitForTimeout(2500);
   const bRole = (await api('/agents', 'get', undefined, tokenA)).data.data.find((a) => a.email === agentEmail)?.role;
   // Reload and confirm persistence.
-  await pageA.reload({ waitUntil: 'networkidle' });
+  await pageA.reload({ waitUntil: 'domcontentloaded' });
   await pageA.waitForTimeout(1000);
   log(`  changed Bob's role via dropdown -> Bob.role = ${bRole} (persisted after reload)`);
   results.E = bAfter?.isActive === false && bRole === 'admin';

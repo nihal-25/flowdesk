@@ -47,12 +47,6 @@ export const useSocketStore = create<SocketState>((set, get) => ({
     socket.on('connect', () => console.info('[socket] Connected:', socket.id));
     socket.on('disconnect', (reason) => console.warn('[socket] Disconnected:', reason));
     socket.on('connect_error', (err) => console.error('[socket] Connection error:', err.message));
-    socket.onAny((event: string) => console.info('[socket] event:', event));
-    if (typeof window !== 'undefined') {
-      const w = window as unknown as { __sc?: number; __socket?: unknown };
-      w.__sc = (w.__sc ?? 0) + 1;
-      w.__socket = socket;
-    }
 
     set({ socket });
   },
