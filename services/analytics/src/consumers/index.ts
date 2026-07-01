@@ -1,5 +1,5 @@
 import { createConsumer } from '@flowdesk/kafka';
-import { KAFKA_TOPICS } from '@flowdesk/shared';
+import { KAFKA_TOPICS, REDIS_KEYS } from '@flowdesk/shared';
 import type {
   TicketCreatedEvent,
   TicketResolvedEvent,
@@ -18,6 +18,14 @@ function agentWorkloadKey(tenantId: string, agentId: string): string {
   return `analytics:${tenantId}:agent:${agentId}:workload`;
 }
 
+// Invalidate the cached /analytics/overview response so the next read (with or
+// without ?fresh=true) recomputes from the just-updated counters. Without this
+// the 60s response cache would keep serving pre-event values even though the
+// counters have already changed.
+async function bustOverviewCache(tenantId: string): Promise<void> {
+  await getRedis().del(REDIS_KEYS.ANALYTICS_OVERVIEW(tenantId));
+}
+
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 async function handleTicketCreated(payload: TicketCreatedEvent): Promise<void> {
@@ -29,6 +37,7 @@ async function handleTicketCreated(payload: TicketCreatedEvent): Promise<void> {
   if (payload.assignedTo) {
     await redis.hincrby(agentWorkloadKey(payload.tenantId, payload.assignedTo), 'assigned', 1);
   }
+  await bustOverviewCache(payload.tenantId);
 }
 
 async function handleTicketResolved(payload: TicketResolvedEvent): Promise<void> {
@@ -45,6 +54,7 @@ async function handleTicketResolved(payload: TicketResolvedEvent): Promise<void>
   if (payload.resolvedByUserId) {
     await redis.hincrby(agentWorkloadKey(payload.tenantId, payload.resolvedByUserId), 'resolved', 1);
   }
+  await bustOverviewCache(payload.tenantId);
 }
 
 async function handleMessageSent(payload: MessageSentEvent): Promise<void> {
