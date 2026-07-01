@@ -34,9 +34,14 @@ export const useSocketStore = create<SocketState>((set, get) => ({
 
     const socket = io(CHAT_URL, {
       auth: { token },
-      transports: ['websocket', 'polling'],
+      // Polling first (socket.io default), then upgrade to websocket. Forcing
+      // websocket-first made the browser connection flap through Railway's proxy
+      // (connect/disconnect loop); polling-first establishes a stable session and
+      // falls back gracefully if the ws upgrade can't hold.
+      transports: ['polling', 'websocket'],
+      withCredentials: true,
       reconnection: true,
-      reconnectionAttempts: 10,
+      reconnectionAttempts: 15,
       reconnectionDelay: 1000,
     });
 
