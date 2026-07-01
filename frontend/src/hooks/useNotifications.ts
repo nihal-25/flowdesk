@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
+import { useSocketStore } from '../stores/socket';
+import { useToastStore } from '../stores/toast';
 import type { Notification, NotificationListResponse } from '../types';
 
 export function useNotifications() {
@@ -42,6 +44,19 @@ export function useNotifications() {
     void fetchNotifications();
     void fetchUnreadCount();
   }, [fetchNotifications, fetchUnreadCount]);
+
+  // Real-time: prepend live notifications, bump the badge, and pop a toast.
+  const socket = useSocketStore((s) => s.socket);
+  const onNotification = useSocketStore((s) => s.onNotification);
+  const addToast = useToastStore((s) => s.addToast);
+  useEffect(() => {
+    const unsub = onNotification((n) => {
+      setNotifications((prev) => (prev.some((x) => x.id === n.id) ? prev : [n, ...prev]));
+      setUnreadCount((c) => c + 1);
+      addToast({ title: n.title, body: n.body });
+    });
+    return unsub;
+  }, [socket, onNotification, addToast]);
 
   return { notifications, unreadCount, loading, fetchNotifications, markRead, markAllRead };
 }

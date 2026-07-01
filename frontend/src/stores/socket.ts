@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { io, type Socket } from 'socket.io-client';
-import type { Message, Ticket } from '../types';
+import type { Message, Ticket, Notification } from '../types';
+
+interface PresenceUpdate { userId: string; status: 'online' | 'offline' }
 
 interface SocketState {
   socket: Socket | null;
@@ -14,9 +16,14 @@ interface SocketState {
   onTicketUpdated: (handler: (ticket: Partial<Ticket>) => void) => () => void;
   onTyping: (handler: (data: { userId: string; firstName: string; lastName: string; ticketId: string }) => void) => () => void;
   onStoppedTyping: (handler: (data: { userId: string; ticketId: string }) => void) => () => void;
+  onNotification: (handler: (n: Notification) => void) => () => void;
+  onPresence: (handler: (p: PresenceUpdate) => void) => () => void;
 }
 
-const SOCKET_URL = (import.meta.env['VITE_API_URL'] ?? '').trim();
+// Connect DIRECTLY to the chat service (its own public domain), NOT through the
+// gateway — Socket.IO uses the default /socket.io/ path which the gateway does
+// not proxy. VITE_CHAT_URL points at the chat service; falls back to the API URL.
+const CHAT_URL = (import.meta.env['VITE_CHAT_URL'] ?? import.meta.env['VITE_API_URL'] ?? '').trim();
 
 export const useSocketStore = create<SocketState>((set, get) => ({
   socket: null,
@@ -25,7 +32,7 @@ export const useSocketStore = create<SocketState>((set, get) => ({
     const existing = get().socket;
     if (existing?.connected) return;
 
-    const socket = io(`${SOCKET_URL}/chat`, {
+    const socket = io(CHAT_URL, {
       auth: { token },
       transports: ['websocket', 'polling'],
       reconnection: true,
@@ -76,5 +83,19 @@ export const useSocketStore = create<SocketState>((set, get) => ({
     if (!socket) return () => {};
     socket.on('agent:stopped-typing', handler);
     return () => socket.off('agent:stopped-typing', handler);
+  },
+
+  onNotification: (handler) => {
+    const { socket } = get();
+    if (!socket) return () => {};
+    socket.on('notification:new', handler);
+    return () => socket.off('notification:new', handler);
+  },
+
+  onPresence: (handler) => {
+    const { socket } = get();
+    if (!socket) return () => {};
+    socket.on('presence:update', handler);
+    return () => socket.off('presence:update', handler);
   },
 }));

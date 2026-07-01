@@ -7,12 +7,13 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
 import { Modal } from '../components/ui/Modal';
+import { useToastStore } from '../stores/toast';
 import type { Agent, UserRole } from '../types';
 
+// Only Admin vs Agent — the two roles the app actually uses.
 const ROLE_OPTIONS = [
   { value: 'agent', label: 'Agent' },
   { value: 'admin', label: 'Admin' },
-  { value: 'viewer', label: 'Viewer' },
 ];
 
 const ROLE_COLORS: Record<UserRole, string> = {
@@ -91,18 +92,32 @@ export function AgentsPage() {
     }
   };
 
+  const addToast = useToastStore((s) => s.addToast);
+
+  const applyAgentUpdate = (updated: Agent) =>
+    setAgents((prev) => prev.map((a) => (a.id === updated.id ? { ...a, ...updated } : a)));
+
+  const errMessage = (err: unknown): string => {
+    const e = err as { response?: { data?: { error?: { message?: string } } } };
+    return e?.response?.data?.error?.message ?? 'Something went wrong';
+  };
+
   const handleRoleChange = async (agentId: string, role: UserRole) => {
     try {
-      await api.patch(`/agents/${agentId}`, { role });
-      setAgents((prev) => prev.map((a) => a.id === agentId ? { ...a, role } : a));
-    } catch { /* ignore */ }
+      const { data } = await api.patch<{ success: boolean; data?: Agent }>(`/agents/${agentId}`, { role });
+      if (data.success && data.data) applyAgentUpdate(data.data);
+    } catch (err) {
+      addToast({ title: 'Could not change role', body: errMessage(err) });
+    }
   };
 
   const handleToggleActive = async (agentId: string, isActive: boolean) => {
     try {
-      await api.patch(`/agents/${agentId}`, { isActive: !isActive });
-      setAgents((prev) => prev.map((a) => a.id === agentId ? { ...a, isActive: !isActive } : a));
-    } catch { /* ignore */ }
+      const { data } = await api.patch<{ success: boolean; data?: Agent }>(`/agents/${agentId}`, { isActive: !isActive });
+      if (data.success && data.data) applyAgentUpdate(data.data);
+    } catch (err) {
+      addToast({ title: 'Could not update member', body: errMessage(err) });
+    }
   };
 
   return (

@@ -98,7 +98,9 @@ export function TicketDetailPage() {
 
     const unsubMsg = onMessage((msg) => {
       if (msg.ticketId === id) {
-        setMessages((prev) => [...prev, msg]);
+        // Dedupe by id: the sender also appends locally, and the server may fan
+        // the same message to more than one room.
+        setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
       }
     });
 
@@ -165,7 +167,8 @@ export function TicketDetailPage() {
         { body: replyBody.trim(), messageType }
       );
       if (data.success && data.data) {
-        setMessages((prev) => [...prev, data.data!]);
+        const sent = data.data;
+        setMessages((prev) => (prev.some((m) => m.id === sent.id) ? prev : [...prev, sent]));
         setReplyBody('');
       }
     } catch { /* ignore */ } finally {

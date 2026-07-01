@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { loadDemoData } from '../lib/demo';
+import { useSocketStore } from '../stores/socket';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { StatusBadge, PriorityBadge } from '../components/ui/Badge';
@@ -100,6 +101,16 @@ export function DashboardPage() {
   useEffect(() => {
     void fetchData();
   }, []);
+
+  // Live "Active Agents": refetch (cache-bypassed) whenever presence changes in
+  // the tenant — i.e. a teammate connects or disconnects.
+  const socket = useSocketStore((s) => s.socket);
+  const onPresence = useSocketStore((s) => s.onPresence);
+  useEffect(() => {
+    const unsub = onPresence(() => { void fetchData({ fresh: true, background: true }); });
+    return unsub;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socket, onPresence]);
 
   const handleLoadDemo = async () => {
     setDemoLoading(true);

@@ -58,6 +58,7 @@ export const REDIS_KEYS = {
   PUBSUB_TICKETS: (tenantId: string) => `pubsub:tickets:${tenantId}`,
   PUBSUB_PRESENCE: (tenantId: string) => `pubsub:presence:${tenantId}`,
   PUBSUB_ANALYTICS: (tenantId: string) => `pubsub:analytics:${tenantId}`,
+  PUBSUB_NOTIFICATIONS: (tenantId: string) => `pubsub:notifications:${tenantId}`,
 } as const;
 
 // ─── Tenant Plans ─────────────────────────────────────────────────────────────

@@ -8,6 +8,7 @@ import clsx from 'clsx';
 import { useAuthStore } from '../../stores/auth';
 import { useNotifications } from '../../hooks/useNotifications';
 import { NotificationDropdown } from '../notifications/NotificationDropdown';
+import { ToastContainer } from '../ui/Toast';
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -160,6 +161,7 @@ export function AppLayout() {
           <Outlet />
         </main>
       </div>
+      <ToastContainer />
     </div>
   );
 }

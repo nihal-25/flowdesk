@@ -10,6 +10,7 @@ import { Select } from '../components/ui/Select';
 import { Modal } from '../components/ui/Modal';
 import { StatusBadge, PriorityBadge } from '../components/ui/Badge';
 import { useDebounce } from '../hooks/useDebounce';
+import { useSocketStore } from '../stores/socket';
 import type { Ticket, TicketPriority, TicketListResponse, Agent } from '../types';
 
 const STATUS_OPTIONS = [
@@ -96,6 +97,14 @@ export function TicketsPage() {
     void fetchTickets();
   }, [fetchTickets]);
 
+  // Live-update the list when tickets are created/updated anywhere in the tenant.
+  const socket = useSocketStore((s) => s.socket);
+  const onTicketUpdated = useSocketStore((s) => s.onTicketUpdated);
+  useEffect(() => {
+    const unsub = onTicketUpdated(() => { void fetchTickets(); });
+    return unsub;
+  }, [socket, onTicketUpdated, fetchTickets]);
+
   useEffect(() => {
     if (modalOpen) void fetchAgents();
   }, [modalOpen, fetchAgents]);
@@ -127,7 +136,9 @@ export function TicketsPage() {
       if (data.success && data.data) {
         setModalOpen(false);
         setFormData({ title: '', description: '', priority: 'medium', assignedTo: '', tags: '' });
-        navigate(`/tickets/${data.data.id}`);
+        // Refetch so the new ticket appears in the list immediately (no manual refresh).
+        if (page === 1) await fetchTickets();
+        else setPage(1);
       }
     } catch (err: unknown) {
       const axErr = err as { response?: { data?: { error?: { message?: string } } } };

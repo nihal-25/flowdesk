@@ -9,7 +9,7 @@ import { Server } from 'socket.io';
 import { initPool, testConnection } from '@flowdesk/database';
 import { initRedis, testRedisConnection, getSubscriberClient, setUserOnline, setUserOffline, refreshPresence, getOnlineUsers } from '@flowdesk/redis';
 import { initKafka } from '@flowdesk/kafka';
-import { REDIS_KEYS, PRESENCE_HEARTBEAT_INTERVAL_MS } from '@flowdesk/shared';
+import { PRESENCE_HEARTBEAT_INTERVAL_MS } from '@flowdesk/shared';
 import type { PubSubMessage } from '@flowdesk/redis';
 
 import { config } from './config.js';
@@ -86,8 +86,9 @@ io.on('connection', async (socket) => {
 
   console.info(`[chat] Socket connected: userId=${userId} tenantId=${tenantId}`);
 
-  // Join tenant room
+  // Join tenant room + a per-user room (used for targeted notifications)
   await socket.join(`tenant:${tenantId}`);
+  await socket.join(`user:${userId}`);
 
   // Mark user as online
   await setUserOnline(userId, tenantId);
@@ -160,52 +161,37 @@ io.on('connection', async (socket) => {
 });
 
 // ─── Redis pub/sub for horizontal scaling ─────────────────────────────────────
+// A single subscriber + one pmessage handler routes by channel prefix. This is
+// the bridge that turns events published by other services (tickets,
+// notifications) into WebSocket emits to the right rooms.
 async function setupPubSub(): Promise<void> {
   const subscriber = getSubscriberClient();
 
-  // Pattern subscribe to all tenant message channels
-  subscriber.psubscribe('pubsub:messages:*', (err) => {
-    if (err) console.error('[chat] psubscribe error:', err);
-  });
+  subscriber.psubscribe('pubsub:messages:*', (err) => { if (err) console.error('[chat] psubscribe messages error:', err); });
+  subscriber.psubscribe('pubsub:tickets:*', (err) => { if (err) console.error('[chat] psubscribe tickets error:', err); });
+  subscriber.psubscribe('pubsub:notifications:*', (err) => { if (err) console.error('[chat] psubscribe notifications error:', err); });
 
   subscriber.on('pmessage', (_pattern: string, channel: string, rawMessage: string) => {
     try {
       const parsed = JSON.parse(rawMessage) as PubSubMessage<Record<string, unknown>>;
-      const tenantId = channel.replace('pubsub:messages:', '');
+      const tenantId = parsed.tenantId;
+      const ticketId = parsed.data['ticketId'] as string | undefined;
 
-      if (parsed.event === 'message:new') {
-        const ticketId = parsed.data['ticketId'] as string | undefined;
-        if (ticketId) {
-          io.to(`ticket:${ticketId}`).emit('message:new', parsed.data);
-        }
-        io.to(`tenant:${tenantId}`).emit('message:new', parsed.data);
-      } else if (parsed.event === 'ticket:updated') {
-        const ticketId = parsed.data['ticketId'] as string | undefined;
-        if (ticketId) {
-          io.to(`ticket:${ticketId}`).emit('ticket:updated', parsed.data);
-        }
+      if (channel.startsWith('pubsub:messages:')) {
+        // New message → only the ticket room (frontend dedupes by id anyway).
+        if (ticketId) io.to(`ticket:${ticketId}`).emit('message:new', parsed.data);
+      } else if (channel.startsWith('pubsub:tickets:')) {
+        // Ticket created/updated → the ticket room (detail view) AND the tenant
+        // room (so anyone viewing the ticket LIST updates without a refresh).
+        if (ticketId) io.to(`ticket:${ticketId}`).emit('ticket:updated', parsed.data);
         io.to(`tenant:${tenantId}`).emit('ticket:updated', parsed.data);
+      } else if (channel.startsWith('pubsub:notifications:')) {
+        // Notification → the specific recipient's room.
+        const userId = parsed.data['userId'] as string | undefined;
+        if (userId) io.to(`user:${userId}`).emit('notification:new', parsed.data);
       }
     } catch (err) {
       console.error('[chat] pmessage parse error:', err);
-    }
-  });
-
-  // Subscribe to ticket updates
-  subscriber.psubscribe(REDIS_KEYS.PUBSUB_TICKETS('*'), (err) => {
-    if (err) console.error('[chat] psubscribe tickets error:', err);
-  });
-
-  subscriber.on('pmessage', (_pattern: string, channel: string, rawMessage: string) => {
-    try {
-      if (!channel.startsWith('pubsub:tickets:')) return;
-      const parsed = JSON.parse(rawMessage) as PubSubMessage<Record<string, unknown>>;
-      const ticketId = parsed.data['ticketId'] as string | undefined;
-      if (ticketId) {
-        io.to(`ticket:${ticketId}`).emit('ticket:updated', parsed.data);
-      }
-    } catch (err) {
-      console.error('[chat] pmessage tickets parse error:', err);
     }
   });
 }

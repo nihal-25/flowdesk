@@ -122,6 +122,12 @@ ticketsRouter.post('/', authenticate, async (req, res, next) => {
     };
     await publishEvent(KAFKA_TOPICS.TICKET_CREATED, event);
 
+    // Real-time fanout: publish so the chat service pushes a ticket:updated to
+    // the tenant room, making the new ticket appear in open list views live.
+    publish(REDIS_KEYS.PUBSUB_TICKETS(tenantId), 'ticket:updated', { ticketId, title, priority, status: 'open' }, tenantId).catch(
+      (err: unknown) => console.error('[tickets] Failed to publish ticket create to Redis pub/sub:', err),
+    );
+
     void dispatchWebhooks(tenantId, 'ticket.created', {
       ticketId,
       title,

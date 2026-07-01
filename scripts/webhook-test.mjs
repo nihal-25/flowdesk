@@ -103,10 +103,10 @@ async function main() {
   }
   if (!received) throw new Error('Part A FAILED: no webhook delivery arrived at webhook.site within 25s');
 
-  // webhook.site lowercases header names; values are arrays
+  // webhook.site lowercases header names; values may be arrays or strings
   const headers = received.headers ?? {};
-  const sigHeader = (headers['x-flowdesk-signature'] ?? headers['X-FlowDesk-Signature'] ?? [])[0]
-    ?? (typeof headers['x-flowdesk-signature'] === 'string' ? headers['x-flowdesk-signature'] : null);
+  const rawSig = headers['x-flowdesk-signature'] ?? headers['X-FlowDesk-Signature'] ?? null;
+  const sigHeader = Array.isArray(rawSig) ? rawSig[0] : rawSig;
   const rawBody = received.content ?? '';
   console.log(`[A] delivery received. signature header: ${sigHeader ? sigHeader.slice(0, 24) + '...' : 'MISSING'}`);
 

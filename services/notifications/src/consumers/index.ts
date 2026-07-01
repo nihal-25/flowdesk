@@ -3,8 +3,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { createConsumer } from '@flowdesk/kafka';
 import { publishEvent } from '@flowdesk/kafka';
 import { query, queryOne, withTransaction } from '@flowdesk/database';
-import { isUserOnline } from '@flowdesk/redis';
+import { isUserOnline, publish } from '@flowdesk/redis';
 import {
+  REDIS_KEYS,
   KAFKA_TOPICS,
   WEBHOOK_MAX_RETRIES,
   WEBHOOK_RETRY_DELAYS_MS,
@@ -34,12 +35,14 @@ async function insertNotification(opts: {
   entityType?: string | null;
   entityId?: string | null;
 }): Promise<void> {
+  const id = uuidv4();
+  const createdAt = new Date().toISOString();
   await query(
     `INSERT INTO notifications (id, user_id, tenant_id, type, title, body, is_read, entity_type, entity_id, created_at)
      VALUES ($1, $2, $3, $4, $5, $6, false, $7, $8, NOW())
      ON CONFLICT DO NOTHING`,
     [
-      uuidv4(),
+      id,
       opts.userId,
       opts.tenantId,
       opts.type,
@@ -49,6 +52,26 @@ async function insertNotification(opts: {
       opts.entityId ?? null,
     ],
   );
+
+  // Real-time fanout: publish so the chat service pushes it over WebSocket to
+  // the recipient's browser (live bell badge + toast). Fire-and-forget.
+  publish(
+    REDIS_KEYS.PUBSUB_NOTIFICATIONS(opts.tenantId),
+    'notification:new',
+    {
+      id,
+      userId: opts.userId,
+      tenantId: opts.tenantId,
+      type: opts.type,
+      title: opts.title,
+      body: opts.body,
+      isRead: false,
+      entityType: opts.entityType ?? null,
+      entityId: opts.entityId ?? null,
+      createdAt,
+    },
+    opts.tenantId,
+  ).catch((err: unknown) => console.error('[notifications] Failed to publish notification to Redis pub/sub:', err));
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────

@@ -6,7 +6,8 @@ export type PubSubChannel =
   | ReturnType<typeof REDIS_KEYS.PUBSUB_MESSAGES>
   | ReturnType<typeof REDIS_KEYS.PUBSUB_TICKETS>
   | ReturnType<typeof REDIS_KEYS.PUBSUB_PRESENCE>
-  | ReturnType<typeof REDIS_KEYS.PUBSUB_ANALYTICS>;
+  | ReturnType<typeof REDIS_KEYS.PUBSUB_ANALYTICS>
+  | ReturnType<typeof REDIS_KEYS.PUBSUB_NOTIFICATIONS>;
 
 export interface PubSubMessage<T = unknown> {
   event: string;

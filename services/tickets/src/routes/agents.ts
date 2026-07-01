@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { query, queryOne } from '@flowdesk/database';
 import { getOnlineUsers } from '@flowdesk/redis';
 import { authenticate } from '../middleware/auth.js';
-import { NotFoundError } from '../errors.js';
+import { NotFoundError, ForbiddenError, ValidationError } from '../errors.js';
 
 export const agentsRouter = Router();
 
@@ -12,11 +12,12 @@ agentsRouter.get('/', authenticate, async (req, res, next) => {
   try {
     const { tenantId } = req.auth;
 
+    // Include inactive members so the Agents page can show status and re-activate.
     const agents = await query<Record<string, unknown>>(
       `SELECT id, tenant_id, email, first_name, last_name, role, is_active, avatar_url, last_login_at, created_at
        FROM users
-       WHERE tenant_id = $1 AND role IN ('admin', 'agent', 'superadmin') AND is_active = true
-       ORDER BY first_name ASC, last_name ASC`,
+       WHERE tenant_id = $1 AND role IN ('admin', 'agent', 'superadmin')
+       ORDER BY is_active DESC, first_name ASC, last_name ASC`,
       [tenantId],
     );
 
@@ -40,6 +41,76 @@ agentsRouter.get('/', authenticate, async (req, res, next) => {
     res.json({
       success: true,
       data: agentsWithPresence,
+      requestId: req.id,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── PATCH /agents/:id ────────────────────────────────────────────────────────
+// Update a team member's role and/or active status. Admin-only.
+agentsRouter.patch('/:id', authenticate, async (req, res, next) => {
+  try {
+    const { tenantId, userId, role: callerRole } = req.auth;
+    if (!['admin', 'superadmin'].includes(callerRole)) {
+      throw new ForbiddenError('Only admins can modify team members');
+    }
+    const { id } = req.params;
+    const { role, isActive } = req.body as { role?: unknown; isActive?: unknown };
+
+    if (role === undefined && isActive === undefined) {
+      throw new ValidationError('Nothing to update — provide role and/or isActive');
+    }
+    if (role !== undefined && role !== 'admin' && role !== 'agent') {
+      throw new ValidationError("role must be 'admin' or 'agent'");
+    }
+    if (isActive !== undefined && typeof isActive !== 'boolean') {
+      throw new ValidationError('isActive must be a boolean');
+    }
+    // Prevent locking yourself out of your own workspace.
+    if (id === userId && isActive === false) {
+      throw new ForbiddenError('You cannot deactivate your own account');
+    }
+
+    const target = await queryOne<{ id: string }>(
+      `SELECT id FROM users WHERE id = $1 AND tenant_id = $2`,
+      [id, tenantId],
+    );
+    if (!target) throw new NotFoundError('Agent');
+
+    const setClauses: string[] = [];
+    const params: unknown[] = [];
+    let i = 1;
+    if (role !== undefined) { setClauses.push(`role = $${i++}`); params.push(role); }
+    if (isActive !== undefined) { setClauses.push(`is_active = $${i++}`); params.push(isActive); }
+    params.push(id, tenantId);
+
+    const updated = await queryOne<Record<string, unknown>>(
+      `UPDATE users SET ${setClauses.join(', ')}
+       WHERE id = $${i++} AND tenant_id = $${i++}
+       RETURNING id, tenant_id, email, first_name, last_name, role, is_active, avatar_url, last_login_at, created_at`,
+      params,
+    );
+    if (!updated) throw new NotFoundError('Agent');
+
+    const onlineSet = new Set(await getOnlineUsers(tenantId));
+    res.json({
+      success: true,
+      data: {
+        id: updated['id'],
+        tenantId: updated['tenant_id'],
+        email: updated['email'],
+        firstName: updated['first_name'],
+        lastName: updated['last_name'],
+        role: updated['role'],
+        isActive: updated['is_active'],
+        avatarUrl: updated['avatar_url'] ?? null,
+        lastLoginAt: updated['last_login_at'] ?? null,
+        createdAt: updated['created_at'],
+        isOnline: onlineSet.has(String(updated['id'])),
+      },
       requestId: req.id,
       timestamp: new Date().toISOString(),
     });
