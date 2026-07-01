@@ -62,14 +62,20 @@ export function DashboardPage() {
   const [volumeData, setVolumeData] = useState<TicketVolumePoint[]>([]);
   const [recentTickets, setRecentTickets] = useState<TicketType[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [demoLoading, setDemoLoading] = useState(false);
   const [demoMessage, setDemoMessage] = useState('');
 
-  const fetchData = async () => {
-    setLoading(true);
+  // `background: true` refreshes without swapping to the full skeleton;
+  // `fresh: true` bypasses the analytics service's 60s response cache so newly
+  // created data (e.g. just-loaded demo data) is reflected immediately.
+  const fetchData = async (opts: { fresh?: boolean; background?: boolean } = {}) => {
+    if (opts.background) setRefreshing(true);
+    else setLoading(true);
+    const overviewUrl = opts.fresh ? '/analytics/overview?fresh=true' : '/analytics/overview';
     try {
       const [overviewRes, volumeRes, ticketsRes] = await Promise.allSettled([
-        api.get<{ success: boolean; data?: AnalyticsOverviewResponse }>('/analytics/overview'),
+        api.get<{ success: boolean; data?: AnalyticsOverviewResponse }>(overviewUrl),
         api.get<{ success: boolean; data?: TicketVolumeResponse }>('/analytics/tickets?period=7d'),
         api.get<{ success: boolean; data?: TicketListResponse }>('/tickets?pageSize=10&sortBy=created_at&sortOrder=desc'),
       ]);
@@ -87,6 +93,7 @@ export function DashboardPage() {
       }
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -101,7 +108,13 @@ export function DashboardPage() {
     setDemoMessage(result.message);
     setDemoLoading(false);
     if (result.success) {
-      await fetchData();
+      // Immediate refetch: tickets, agents and the volume chart read straight
+      // from the DB, so they update right away (fresh=true skips the cache).
+      await fetchData({ fresh: true, background: true });
+      // Open/Resolved cards are derived from Kafka-fed counters, so refetch a
+      // couple more times over the next few seconds to let them catch up.
+      window.setTimeout(() => { void fetchData({ fresh: true, background: true }); }, 2500);
+      window.setTimeout(() => { void fetchData({ fresh: true, background: true }); }, 6000);
     }
   };
 
@@ -141,7 +154,13 @@ export function DashboardPage() {
           <p className="text-gray-500 text-sm mt-0.5">Your support overview at a glance</p>
         </div>
         <div className="flex items-center gap-3">
-          {demoMessage && (
+          {refreshing && (
+            <span className="flex items-center gap-1.5 text-xs text-gray-400">
+              <span className="animate-spin w-3 h-3 border-2 border-gray-300 border-t-transparent rounded-full" />
+              Refreshing…
+            </span>
+          )}
+          {!refreshing && demoMessage && (
             <p className="text-xs text-gray-500 max-w-xs truncate">{demoMessage}</p>
           )}
           <Button
@@ -157,7 +176,7 @@ export function DashboardPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 transition-opacity ${refreshing ? 'opacity-60' : 'opacity-100'}`}>
         <StatCard
           title="Open Tickets"
           value={overview?.openTickets ?? '—'}

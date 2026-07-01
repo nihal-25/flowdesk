@@ -13,10 +13,11 @@ export const analyticsRouter = Router();
 analyticsRouter.get('/overview', authenticate, async (req, res, next) => {
   try {
     const { tenantId } = req.auth;
+    // Allow the client to bypass the 60s response cache (e.g. right after
+    // loading demo data) so freshly-created data is reflected immediately.
+    const bypassCache = req.query['fresh'] === 'true';
 
-    const data = await cacheGetOrSet(
-      REDIS_KEYS.ANALYTICS_OVERVIEW(tenantId),
-      async () => {
+    const computeOverview = async () => {
         const redis = getRedis();
         const statsKey = `analytics:${tenantId}:stats`;
 
@@ -67,9 +68,11 @@ analyticsRouter.get('/overview', authenticate, async (req, res, next) => {
           },
           updatedAt: new Date().toISOString(),
         };
-      },
-      60, // 60 seconds cache TTL
-    );
+    };
+
+    const data = bypassCache
+      ? await computeOverview()
+      : await cacheGetOrSet(REDIS_KEYS.ANALYTICS_OVERVIEW(tenantId), computeOverview, 60);
 
     res.json({
       success: true,
