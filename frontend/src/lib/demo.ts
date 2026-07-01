@@ -27,91 +27,102 @@ export async function loadDemoData(): Promise<{ success: boolean; message: strin
       { title: 'Webhook not firing on ticket close', description: 'Configured webhook for ticket.closed event but endpoint receives nothing.', priority: 'high' as const, tags: ['webhook', 'bug'] },
     ];
 
-    const createdTickets: { id: string }[] = [];
-    for (const ticket of ticketData) {
+    // ── Stage A: tickets + agents are independent → create all in parallel ──
+    // Creating a ticket and creating the demo agents don't depend on each other.
+    // Ticket results are kept index-aligned to ticketData (null = failed) so the
+    // assignment/message/status stages can reference tickets by position.
+    const createAgents = async (): Promise<{ agents: { id: string }[]; error: string }> => {
       try {
-        const { data } = await api.post<{ success: boolean; data?: { id: string } }>('/tickets', ticket);
-        if (data.success && data.data) createdTickets.push(data.data);
-      } catch { /* a single ticket failing is non-fatal */ }
-    }
-
-    // Create the demo agents (Sarah Chen, Marcus Johnson, Priya Patel) directly
-    // in the tenant. This is a core part of "demo data" — if it fails we surface
-    // the real reason instead of silently swallowing it.
-    const demoAgents: { id: string }[] = [];
-    let agentError = '';
-    try {
-      const { data } = await api.post<{ success: boolean; data?: { agents: { id: string }[] } }>('/auth/demo-agents');
-      if (data.success && Array.isArray(data.data?.agents)) {
-        demoAgents.push(...data.data!.agents);
-      } else {
-        agentError = `unexpected response shape: ${JSON.stringify(data).slice(0, 160)}`;
+        const { data } = await api.post<{ success: boolean; data?: { agents: { id: string }[] } }>('/auth/demo-agents');
+        if (data.success && Array.isArray(data.data?.agents)) {
+          return { agents: data.data!.agents, error: '' };
+        }
+        return { agents: [], error: `unexpected response shape: ${JSON.stringify(data).slice(0, 160)}` };
+      } catch (e) {
+        return { agents: [], error: errReason(e) };
       }
-    } catch (e) {
-      agentError = errReason(e);
-    }
+    };
 
-    // Assign a realistic subset of tickets to the agents (round-robin), leaving
-    // some unassigned so the board shows a mix.
+    const [ticketResults, agentOutcome] = await Promise.all([
+      Promise.all(
+        ticketData.map(async (ticket): Promise<{ id: string } | null> => {
+          try {
+            const { data } = await api.post<{ success: boolean; data?: { id: string } }>('/tickets', ticket);
+            return data.success && data.data ? data.data : null;
+          } catch {
+            return null; // a single ticket failing is non-fatal
+          }
+        }),
+      ),
+      createAgents(),
+    ]);
+
+    const createdCount = ticketResults.filter((t): t is { id: string } => t !== null).length;
+    const demoAgents = agentOutcome.agents;
+
+    // ── Stage B: assignments (need tickets + agents) → distinct tickets, parallel ──
     let assignedCount = 0;
     if (demoAgents.length > 0) {
-      const assignments = [0, 1, 3, 4, 6, 7]; // ticket indexes to assign
-      for (let i = 0; i < assignments.length; i++) {
-        const ticket = createdTickets[assignments[i]!];
-        const agent = demoAgents[i % demoAgents.length];
-        if (!ticket || !agent) continue;
-        try {
-          await api.patch(`/tickets/${ticket.id}`, { assignedTo: agent.id });
-          assignedCount++;
-        } catch { /* a single assignment failing is non-fatal */ }
-      }
+      const assignmentIdx = [0, 1, 3, 4, 6, 7]; // ticket indexes to assign
+      const results = await Promise.all(
+        assignmentIdx.map(async (idx, i): Promise<boolean> => {
+          const ticket = ticketResults[idx];
+          const agent = demoAgents[i % demoAgents.length];
+          if (!ticket || !agent) return false;
+          try {
+            await api.patch(`/tickets/${ticket.id}`, { assignedTo: agent.id });
+            return true;
+          } catch {
+            return false; // a single assignment failing is non-fatal
+          }
+        }),
+      );
+      assignedCount = results.filter(Boolean).length;
     }
 
-    // Add messages to first few tickets
+    // ── Stage C: messages + status → parallel across tickets, ordered within ──
+    // Different tickets run concurrently; within a ticket, messages stay in
+    // conversation order and status steps through open→in_progress→resolved.
+    // Runs after Stage B so a ticket isn't assigned and status-changed at once.
     const messages = [
       'Hi team, can someone look into this urgently? Our customers are impacted.',
       'I am investigating this now. Looks like a configuration issue.',
       'Found the root cause — pushing a fix in 30 minutes.',
     ];
-    for (let i = 0; i < Math.min(3, createdTickets.length); i++) {
-      const ticket = createdTickets[i];
-      if (!ticket) continue;
-      for (const body of messages) {
-        try {
-          await api.post(`/tickets/${ticket.id}/messages`, { body, messageType: 'text' });
-        } catch { /* ignore */ }
-      }
-    }
-
-    // Move a couple tickets along the workflow (open -> in_progress -> resolved).
-    // Note: status transitions are validated server-side, so step through them.
-    const progressions: string[][] = [
-      ['in_progress'],
-      ['in_progress', 'resolved'],
-      ['in_progress'],
-    ];
-    for (let i = 0; i < Math.min(progressions.length, createdTickets.length); i++) {
-      const ticket = createdTickets[i];
-      if (!ticket) continue;
-      for (const status of progressions[i]!) {
-        try {
-          await api.patch(`/tickets/${ticket.id}`, { status });
-        } catch { /* ignore */ }
-      }
-    }
+    const progressions: Record<number, string[]> = {
+      0: ['in_progress'],
+      1: ['in_progress', 'resolved'],
+      2: ['in_progress'],
+    };
+    await Promise.all(
+      [0, 1, 2].map(async (idx) => {
+        const ticket = ticketResults[idx];
+        if (!ticket) return;
+        for (const body of messages) {
+          try {
+            await api.post(`/tickets/${ticket.id}/messages`, { body, messageType: 'text' });
+          } catch { /* ignore */ }
+        }
+        for (const status of progressions[idx] ?? []) {
+          try {
+            await api.patch(`/tickets/${ticket.id}`, { status });
+          } catch { /* ignore */ }
+        }
+      }),
+    );
 
     // Agents are a core part of demo data — if none were created, report failure
     // with the real reason rather than a misleading success.
     if (demoAgents.length === 0) {
       return {
         success: false,
-        message: `Created ${createdTickets.length} tickets, but agent creation FAILED (${agentError || 'no agents returned'}). Try again or check the auth service.`,
+        message: `Created ${createdCount} tickets, but agent creation FAILED (${agentOutcome.error || 'no agents returned'}). Try again or check the auth service.`,
       };
     }
 
     return {
       success: true,
-      message: `Created ${createdTickets.length} tickets, ${demoAgents.length} agents, and ${assignedCount} assignments.`,
+      message: `Created ${createdCount} tickets, ${demoAgents.length} agents, and ${assignedCount} assignments.`,
     };
   } catch (err) {
     return { success: false, message: `Demo data failed: ${errReason(err)}` };
