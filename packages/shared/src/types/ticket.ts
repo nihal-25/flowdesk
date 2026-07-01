@@ -14,12 +14,14 @@ export type TicketEventType =
   | 'closed'
   | 'reopened';
 
-// Allowed status transitions
+// Allowed status transitions.
+// 'resolved' must be reachable from any active state — resolving a ticket that
+// is still 'open' (never moved to in_progress) is a normal, common action.
 export const TICKET_STATUS_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
-  open: ['in_progress', 'closed'],
+  open: ['in_progress', 'resolved', 'closed'],
   in_progress: ['open', 'resolved', 'closed'],
-  resolved: ['closed', 'open'],
-  closed: ['open'],
+  resolved: ['closed', 'open', 'in_progress'],
+  closed: ['open', 'in_progress'],
 };
 
 export interface Ticket {

@@ -119,6 +119,16 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
     const slug = slugify(tenantName);
 
     const result = await withTransaction(async (client) => {
+      // Enforce ONE email = ONE workspace globally. An email that already belongs
+      // to any tenant cannot create a second account/workspace.
+      const emailTaken = await client.query(
+        'SELECT id FROM users WHERE email = $1 LIMIT 1',
+        [email],
+      );
+      if ((emailTaken.rowCount ?? 0) > 0) {
+        throw new ConflictError('An account with this email already exists. Please log in instead.');
+      }
+
       // Check slug uniqueness
       const existing = await client.query(
         'SELECT id FROM tenants WHERE slug = $1',
@@ -128,8 +138,6 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
         throw new ConflictError(`Tenant slug "${slug}" is already taken`);
       }
 
-      // Check email uniqueness (no tenant yet — check globally for superadmin case)
-      // For multi-tenant: email is unique within a tenant, but on registration it's a new tenant
       const hashed = await hashPassword(password);
 
       const tenantRow = await client.query<{ id: string }>(
@@ -657,14 +665,14 @@ router.post('/accept-invite', async (req: Request, res: Response, next: NextFunc
     if (dbToken.used_at) throw new AuthError('Invite token already used', ERROR_CODES.INVITE_INVALID);
     if (dbToken.expires_at < new Date()) throw new AuthError('Invite token has expired', ERROR_CODES.INVITE_EXPIRED);
 
-    // Guard the UNIQUE(tenant_id, email) constraint so a double-accept or an
-    // email that already belongs to the workspace returns a clear error, not a 500.
+    // Enforce ONE email = ONE workspace globally. If this email already belongs
+    // to ANY tenant (including this one, or a double-accept), reject clearly.
     const alreadyMember = await queryOne<{ id: string }>(
-      `SELECT id FROM users WHERE tenant_id = $1 AND email = $2`,
-      [dbToken.tenant_id, dbToken.email],
+      `SELECT id FROM users WHERE email = $1 LIMIT 1`,
+      [dbToken.email],
     );
     if (alreadyMember) {
-      throw new ConflictError('This email is already a member of the workspace. Try logging in instead.');
+      throw new ConflictError('This email already belongs to a FlowDesk workspace. Each email can only be part of one workspace.');
     }
 
     const firstName = newFirstName ?? dbToken.first_name;
