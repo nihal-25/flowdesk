@@ -14,8 +14,9 @@ async function main() {
 
   const browser = await chromium.launch({ headless: true });
   const page = await (await browser.newContext()).newPage();
-  page.on('console', (m) => { const t = m.text(); if (/socket|Connected|Disconnect|event|error|chat/i.test(t)) log('  console:', m.type(), t); });
-  page.on('websocket', (ws) => { log('  WS opened:', ws.url()); ws.on('close', () => log('  WS closed:', ws.url())); ws.on('socketerror', (e) => log('  WS error:', e)); });
+  page.on('console', (m) => log('  console:', m.type(), m.text()));
+  page.on('websocket', (ws) => { log('  WS opened:', ws.url().slice(0, 70)); ws.on('close', () => log('  WS closed')); });
+  page.on('requestfailed', (r) => { if (/socket.io/.test(r.url())) log('  REQ FAILED:', r.url().slice(0, 90), r.failure()?.errorText); });
 
   await page.goto(`${SITE}/login`, { waitUntil: 'networkidle' });
   await page.getByLabel('Work email').fill(email);
@@ -30,8 +31,10 @@ async function main() {
   await axios.post(`${GW}/tickets/${ticket.id}/messages`, { body: `probe-msg-${ts}`, messageType: 'text' }, { headers: { Authorization: `Bearer ${token}` } });
   await page.waitForTimeout(4000);
 
+  const diag = await page.evaluate(() => ({ sc: window.__sc ?? 0 }));
+  log(`sockets created by app (window.__sc): ${diag.sc}`);
   const gotMsg = (await page.evaluate(() => document.body.innerText)).includes(`probe-msg-${ts}`);
-  log(`\nmessage appeared in browser DOM (via socket): ${gotMsg}`);
+  log(`message appeared in browser DOM (via socket): ${gotMsg}`);
   await browser.close();
   process.exit(0);
 }

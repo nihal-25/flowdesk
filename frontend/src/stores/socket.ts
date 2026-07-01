@@ -30,18 +30,17 @@ export const useSocketStore = create<SocketState>((set, get) => ({
 
   connect: (token) => {
     const existing = get().socket;
-    if (existing?.connected) return;
+    // Reuse an existing socket that is connected OR still in the process of
+    // connecting — never create a second socket (that caused connect/disconnect
+    // churn where each new socket orphaned the previous one).
+    if (existing) return;
 
     const socket = io(CHAT_URL, {
       auth: { token },
-      // Polling first (socket.io default), then upgrade to websocket. Forcing
-      // websocket-first made the browser connection flap through Railway's proxy
-      // (connect/disconnect loop); polling-first establishes a stable session and
-      // falls back gracefully if the ws upgrade can't hold.
+      // Polling first, then upgrade to websocket — robust through Railway's proxy.
       transports: ['polling', 'websocket'],
-      withCredentials: true,
       reconnection: true,
-      reconnectionAttempts: 15,
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
     });
 
@@ -49,6 +48,9 @@ export const useSocketStore = create<SocketState>((set, get) => ({
     socket.on('disconnect', (reason) => console.warn('[socket] Disconnected:', reason));
     socket.on('connect_error', (err) => console.error('[socket] Connection error:', err.message));
     socket.onAny((event: string) => console.info('[socket] event:', event));
+    if (typeof window !== 'undefined') {
+      (window as unknown as { __sc?: number }).__sc = ((window as unknown as { __sc?: number }).__sc ?? 0) + 1;
+    }
 
     set({ socket });
   },
