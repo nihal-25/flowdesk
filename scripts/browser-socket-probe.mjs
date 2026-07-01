@@ -10,31 +10,35 @@ const log = (...a) => console.log(...a);
 async function main() {
   const reg = await axios.post(`${GW}/auth/register`, { tenantName: `BSP ${ts}`, firstName: 'B', lastName: 'P', email, password: 'Probe!123' });
   const token = reg.data.data.accessToken;
-  const ticket = (await axios.post(`${GW}/tickets`, { title: `bsp ${ts}`, description: 'd', priority: 'high', tags: [] }, { headers: { Authorization: `Bearer ${token}` } })).data.data;
 
   const browser = await chromium.launch({ headless: true });
   const page = await (await browser.newContext()).newPage();
-  page.on('console', (m) => log('  console:', m.type(), m.text()));
-  page.on('websocket', (ws) => { log('  WS opened:', ws.url().slice(0, 70)); ws.on('close', () => log('  WS closed')); });
-  page.on('requestfailed', (r) => { if (/socket.io/.test(r.url())) log('  REQ FAILED:', r.url().slice(0, 90), r.failure()?.errorText); });
+  page.on('console', (m) => { const t = m.text(); if (/\[socket\]/.test(t)) log('  console:', t); });
 
   await page.goto(`${SITE}/login`, { waitUntil: 'networkidle' });
   await page.getByLabel('Work email').fill(email);
   await page.getByLabel('Password', { exact: true }).fill('Probe!123');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.waitForURL('**/dashboard', { timeout: 30000 });
-  log('logged in; navigating to ticket');
-  await page.goto(`${SITE}/tickets/${ticket.id}`, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(3000);
-
-  log('posting a message via API (browser is viewing this ticket, should receive message:new)');
-  await axios.post(`${GW}/tickets/${ticket.id}/messages`, { body: `probe-msg-${ts}`, messageType: 'text' }, { headers: { Authorization: `Bearer ${token}` } });
+  log('logged in; staying on dashboard (SPA, no reload)');
   await page.waitForTimeout(4000);
 
-  const diag = await page.evaluate(() => ({ sc: window.__sc ?? 0 }));
-  log(`sockets created by app (window.__sc): ${diag.sc}`);
-  const gotMsg = (await page.evaluate(() => document.body.innerText)).includes(`probe-msg-${ts}`);
-  log(`message appeared in browser DOM (via socket): ${gotMsg}`);
+  const diag = await page.evaluate(() => ({
+    sc: window.__sc ?? 0,
+    connected: !!(window.__socket && window.__socket.connected),
+  }));
+  log(`sockets created (window.__sc): ${diag.sc}, socket.connected: ${diag.connected}`);
+
+  // Creating a ticket notifies the admin (this user) -> should get a live toast.
+  log('creating a ticket via API (admin gets a notification)...');
+  await axios.post(`${GW}/tickets`, { title: `notif ${ts}`, description: 'd', priority: 'high', tags: [] }, { headers: { Authorization: `Bearer ${token}` } });
+  let toast = false;
+  for (let i = 0; i < 12; i++) {
+    await page.waitForTimeout(1000);
+    toast = await page.evaluate(() => !!document.querySelector('.fixed.bottom-4.right-4'));
+    if (toast) break;
+  }
+  log(`toast appeared on dashboard (live notification): ${toast}`);
   await browser.close();
   process.exit(0);
 }
