@@ -42,6 +42,9 @@ export function TicketDetailPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const { joinTicket, leaveTicket, onMessage, onTicketUpdated, onTyping, onStoppedTyping, sendTypingStart, sendTypingStop } = useSocketStore();
+  // Re-run the socket effect once the socket actually connects (it may connect
+  // AFTER this page mounts), so we reliably join the ticket room + attach listeners.
+  const socket = useSocketStore((s) => s.socket);
 
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -137,7 +140,7 @@ export function TicketDetailPage() {
       unsubTyping();
       unsubStopped();
     };
-  }, [id, joinTicket, leaveTicket, onMessage, onTicketUpdated, onTyping, onStoppedTyping, user?.id]);
+  }, [id, socket, joinTicket, leaveTicket, onMessage, onTicketUpdated, onTyping, onStoppedTyping, user?.id]);
 
   const handleTypingInput = (val: string) => {
     setReplyBody(val);

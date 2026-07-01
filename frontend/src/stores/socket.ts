@@ -43,6 +43,7 @@ export const useSocketStore = create<SocketState>((set, get) => ({
     socket.on('connect', () => console.info('[socket] Connected:', socket.id));
     socket.on('disconnect', (reason) => console.warn('[socket] Disconnected:', reason));
     socket.on('connect_error', (err) => console.error('[socket] Connection error:', err.message));
+    socket.onAny((event: string) => console.info('[socket] event:', event));
 
     set({ socket });
   },
