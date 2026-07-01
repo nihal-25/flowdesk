@@ -20,8 +20,9 @@ async function main() {
   await page.getByLabel('Password', { exact: true }).fill('Probe!123');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.waitForURL('**/dashboard', { timeout: 30000 });
-  log('logged in; staying on dashboard (SPA, no reload)');
-  await page.waitForTimeout(4000);
+  log('logged in; now doing a FULL PAGE RELOAD (deep-link / refresh scenario)');
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(5000);
 
   const diag = await page.evaluate(() => ({
     sc: window.__sc ?? 0,

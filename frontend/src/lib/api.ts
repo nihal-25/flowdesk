@@ -13,6 +13,7 @@ export const api = axios.create({
 // Module-level token store (avoids circular imports)
 let _accessToken: string | null = null;
 let _onLogout: (() => void) | null = null;
+let _onTokenRefresh: ((token: string, expiresIn: number) => void) | null = null;
 
 export function setApiToken(token: string | null): void {
   _accessToken = token;
@@ -20,6 +21,13 @@ export function setApiToken(token: string | null): void {
 
 export function setLogoutCallback(cb: () => void): void {
   _onLogout = cb;
+}
+
+// Notified whenever the interceptor silently refreshes the access token (e.g.
+// after a page reload / deep link). Lets the auth store update its accessToken
+// so dependent effects (like the WebSocket connection) re-run.
+export function setTokenRefreshCallback(cb: (token: string, expiresIn: number) => void): void {
+  _onTokenRefresh = cb;
 }
 
 api.interceptors.request.use((config) => {
@@ -63,6 +71,7 @@ api.interceptors.response.use(
         }>(`${BASE_URL}/auth/refresh`, {}, { withCredentials: true });
         if (data.success && data.data) {
           _accessToken = data.data.accessToken;
+          _onTokenRefresh?.(data.data.accessToken, data.data.expiresIn);
           processQueue(null, data.data.accessToken);
           return api(originalRequest);
         }

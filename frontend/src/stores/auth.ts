@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api, setApiToken, setLogoutCallback } from '../lib/api';
+import { api, setApiToken, setLogoutCallback, setTokenRefreshCallback } from '../lib/api';
 import type { User } from '../types';
 
 interface AuthState {
@@ -38,6 +38,13 @@ export const useAuthStore = create<AuthState>((set, get) => {
     if (refreshTimer) clearTimeout(refreshTimer);
     set({ user: null, accessToken: null, isAuthenticated: false });
     window.location.href = '/login';
+  });
+
+  // When the api interceptor silently refreshes the token (page reload / deep
+  // link), mirror it into the store so accessToken-dependent effects (WebSocket
+  // connect) run. Without this the socket only connected on explicit login.
+  setTokenRefreshCallback((token, expiresIn) => {
+    get().setAccessToken(token, expiresIn);
   });
 
   return {
